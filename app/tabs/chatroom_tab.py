@@ -179,7 +179,7 @@ class ChatroomTab(QWidget):
         js_file_path = resource_path(r'.\resources\script\chatroom_get_popup.js')
         with open(js_file_path, 'r', encoding='utf-8') as file:
             script = file.read()
-        QTimer.singleShot(5000, lambda: self.chatroom_chzzk_browser.page().runJavaScript(script))
+        QTimer.singleShot(10000, lambda: self.chatroom_chzzk_browser.page().runJavaScript(script))
     
     def handle_popup_url(self, url):
         print(f"Captured Popup URL: {url}")
