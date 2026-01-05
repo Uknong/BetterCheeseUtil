@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import os
 import subprocess
 import functools
@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QChe
                              QListWidgetItem, QMessageBox, QProgressBar,
                              QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTableWidget,
                              QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget, QMainWindow, QMenu)
-from PyQt6.QtGui import QFont, QIcon, QPixmap, QColor, QCloseEvent, QAction, QMouseEvent
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QColor, QCloseEvent, QAction, QMouseEvent, QKeyEvent
 from PyQt6.QtCore import Qt, QSettings, QUrl, QTimer, pyqtSignal, QSize, QEvent, QPointF
 
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -1446,6 +1446,46 @@ class ChzzkOverlay(QMainWindow):
         print(f"[Overlay] Simulating Skip (Blind Click) - Mode: {'Portrait' if is_port else 'Landscape'}, Align: {align}")
         for x, y in coords_to_click:
             self.simulate_click(x, y)
+
+    def simulate_key(self, key: str):
+        """Simulate keyboard key press"""
+        target_widget = self.browser.focusProxy()
+        if not target_widget:
+            target_widget = self.browser
+        
+        # First click to focus
+        click_x = 640
+        click_y = 360
+        if self.is_portrait:
+            if self.alignment == 'left':
+                click_x = 288
+            elif self.alignment == 'right':
+                click_x = 992
+            click_y = 512
+        
+        self.simulate_click(click_x, click_y)
+        
+        # Map key string to Qt key
+        key_map = {
+            'home': Qt.Key.Key_Home,
+            'end': Qt.Key.Key_End,
+            'space': Qt.Key.Key_Space,
+        }
+        
+        qt_key = key_map.get(key.lower())
+        if qt_key is None:
+            print(f"[Overlay] Unknown key: {key}")
+            return
+        
+        def send_key():
+            press = QKeyEvent(QEvent.Type.KeyPress, qt_key, Qt.KeyboardModifier.NoModifier)
+            release = QKeyEvent(QEvent.Type.KeyRelease, qt_key, Qt.KeyboardModifier.NoModifier)
+            QApplication.sendEvent(target_widget, press)
+            QApplication.sendEvent(target_widget, release)
+            print(f"[Overlay] Key sent: {key}")
+        
+        # Delay to allow focus
+        QTimer.singleShot(100, send_key)
 
     def set_volume(self, volume: int):
         """

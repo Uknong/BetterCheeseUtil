@@ -58,7 +58,7 @@ class OverlayClient(QObject):
         self._reconnect_timer.timeout.connect(self._try_connect)
         self._reconnect_timer.setInterval(500)
         
-    def start(self, url: str, is_ui: bool = False, alignment: str = "center"):
+    def start(self, url: str, is_ui: bool = False, alignment: str = "center", disable_gpu: bool = False):
         """Start the overlay subprocess"""
         if self.process is not None:
             return
@@ -72,7 +72,8 @@ class OverlayClient(QObject):
                 sys.executable,  # This is the frozen exe itself
                 "--overlay",
                 "--url", url,
-                "--alignment", alignment
+                "--alignment", alignment,
+                "--remote-debugging-port=9223"
             ]
         else:
             # Normal Python execution - run overlay_process.py script
@@ -84,11 +85,16 @@ class OverlayClient(QObject):
                 sys.executable,
                 script_path,
                 "--url", url,
-                "--alignment", alignment
+                "--alignment", alignment,
+                "--remote-debugging-port=9223"
             ]
         
         if is_ui:
             args.append("--ui")
+        
+        if disable_gpu:
+            args.append("--disable-gpu")
+            print("[OverlayClient] GPU acceleration disabled")
         
         # Start subprocess
         try:
@@ -96,9 +102,23 @@ class OverlayClient(QObject):
                 args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+                text=True,  # Enable text mode for easier reading
+                bufsize=1,  # Line buffering
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
+                encoding='utf-8',
+                errors='replace'
             )
             print(f"[OverlayClient] Started subprocess PID: {self.process.pid}")
+            print(f"[OverlayClient] Args: {' '.join(args)}")
+            
+            # Start threads to read stdout/stderr
+            self._stdout_thread = threading.Thread(target=self._read_output, args=(self.process.stdout, "[Overlay:OUT]"))
+            self._stdout_thread.daemon = True
+            self._stdout_thread.start()
+            
+            self._stderr_thread = threading.Thread(target=self._read_output, args=(self.process.stderr, "[Overlay:ERR]"))
+            self._stderr_thread.daemon = True
+            self._stderr_thread.start()
             
             # Start trying to connect
             self._reconnect_timer.start()
@@ -106,6 +126,14 @@ class OverlayClient(QObject):
         except Exception as e:
             print(f"[OverlayClient] Failed to start subprocess: {e}")
             self.process = None
+
+    def _read_output(self, pipe, prefix):
+        """Read output from pipe and print it"""
+        try:
+            for line in pipe:
+                print(f"{prefix} {line.strip()}")
+        except Exception:
+            pass
     
     def _try_connect(self):
         """Try to connect to overlay IPC server"""

@@ -415,6 +415,7 @@ class BetterCheeseUtil(QMainWindow):
             self.settings_tab.remember_window_check, self.settings_tab.remember_chat_popup_check,
             self.pick_tab.remote_duplicate_check, self.pick_tab.only_subscriber_check,
             self.settings_tab.chzzk_video_ui_toggle, self.settings_tab.chzzk_overlay_hide_taskbar,
+            self.settings_tab.overlay_disable_gpu, self.settings_tab.overlay_separate_process,
         ]
         for widget in toggle_widgets:
             if widget: # 탭이 로드되었는지 확인
@@ -1069,6 +1070,10 @@ class BetterCheeseUtil(QMainWindow):
         self.chzzk_video_ui_toggle.setChecked(settings.value('chzzk_video_ui_toggle', False, type=bool))
         self.chzzk_overlay_hide_taskbar = QToggle()
         self.chzzk_overlay_hide_taskbar.setChecked(settings.value('chzzk_overlay_hide_taskbar', True, type=bool))
+        self.overlay_disable_gpu = QToggle()
+        self.overlay_disable_gpu.setChecked(settings.value('overlay_disable_gpu', False, type=bool))
+        self.overlay_separate_process = QToggle()
+        self.overlay_separate_process.setChecked(settings.value('overlay_separate_process', True, type=bool))
         self.userProfileUrl = settings.value('userProfileUrl', type=str)
         self.remember_window_check.setChecked(settings.value('remember_window_check', True, type=bool))
         self.remember_chat_popup_check.setChecked(settings.value('remember_chat_popup_check', True, type=bool))
@@ -1338,7 +1343,7 @@ class BetterCheeseUtil(QMainWindow):
             'extra_donation_settings', 'devmode_toggle', 'show_donation_list_toggle',
             'auto_notice_toggle', 'auto_notice_textbox', 'youtube_api_key', 'chzzk_video_url',
             'chzzk_api_client_id', 'chzzk_api_client_secret', 'startup_tab_combobox', 'overlay_alignment_combobox',
-            'remember_window_check', 'chzzk_video_ui_toggle', 'chzzk_overlay_hide_taskbar'
+            'remember_window_check', 'chzzk_video_ui_toggle', 'chzzk_overlay_hide_taskbar', 'overlay_disable_gpu', 'overlay_separate_process'
         ]
         
         # chat_log_search_tab 위젯들

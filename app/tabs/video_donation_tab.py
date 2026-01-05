@@ -20,6 +20,7 @@ from playsound import playsound
 from app.ui_widgets import QToggle
 from app.resources import resource_path
 from app.overlay.overlay_client import OverlayClient
+from app.ui_dialogs import ChzzkOverlay
 from app.ui_preview import OverlayPreviewWindow
 from datetime import datetime
 from playsound import playsound
@@ -282,15 +283,27 @@ class VideoDonationTab(QWidget):
             url = self.main_window.settings_tab.chzzk_video_url.text().strip().replace(" ","")
             is_ui = self.main_window.settings_tab.chzzk_video_ui_toggle.isChecked()
             alignment = getattr(self.main_window, 'overlay_alignment', 'center')
+            use_separate_process = self.main_window.settings_tab.overlay_separate_process.isChecked()
             
-            self.overlay = OverlayClient(self)
-            self.overlay.closed.connect(self.on_overlay_closed)
-            self.overlay.video_started.connect(self.on_video_started)
-            self.overlay.resolution_detected.connect(self.on_resolution_detected)
-            self.overlay.video_started.connect(self.on_video_started)
-            self.overlay.resolution_detected.connect(self.on_resolution_detected)
-            self.overlay.ready.connect(self.on_overlay_ready)
-            self.overlay.start(url, is_ui, alignment)
+            if use_separate_process:
+                # 별도 프로세스 모드
+                self.overlay = OverlayClient(self)
+                self.overlay.closed.connect(self.on_overlay_closed)
+                self.overlay.video_started.connect(self.on_video_started)
+                self.overlay.resolution_detected.connect(self.on_resolution_detected)
+                self.overlay.ready.connect(self.on_overlay_ready)
+                disable_gpu = self.main_window.settings_tab.overlay_disable_gpu.isChecked()
+                self.overlay.start(url, is_ui, alignment, disable_gpu)
+            else:
+                # 인프로세스 모드
+                self.overlay = ChzzkOverlay(self)
+                self.overlay.closed.connect(self.on_overlay_closed)
+                self.overlay.browser.page().video_started_signal.connect(self.on_video_started)
+                self.overlay.browser.page().resolution_detected_signal.connect(self.on_resolution_detected)
+                self.overlay.set_alignment(alignment)
+                self.overlay.show()
+                # 바로 ready 상태
+                QTimer.singleShot(100, self.on_overlay_ready)
 
     def on_overlay_ready(self):
         """Called when overlay IPC is ready"""
@@ -302,7 +315,8 @@ class VideoDonationTab(QWidget):
         if self.overlay and self.overlay.isVisible():
             should_hide = self.main_window.settings_tab.chzzk_overlay_hide_taskbar.isChecked()
             # If should_hide is True, visible is False
-            self.overlay.set_taskbar_visible(not should_hide)
+            if hasattr(self.overlay, 'set_taskbar_visible'):
+                self.overlay.set_taskbar_visible(not should_hide)
 
     def open_overlay(self):
         if self.overlay is None:
@@ -312,13 +326,27 @@ class VideoDonationTab(QWidget):
             url = self.main_window.settings_tab.chzzk_video_url.text().strip().replace(" ","")
             is_ui = self.main_window.settings_tab.chzzk_video_ui_toggle.isChecked()
             alignment = getattr(self.main_window, 'overlay_alignment', 'center')
+            use_separate_process = self.main_window.settings_tab.overlay_separate_process.isChecked()
             
-            self.overlay = OverlayClient(self)
-            self.overlay.closed.connect(self.on_overlay_closed)
-            self.overlay.video_started.connect(self.on_video_started)
-            self.overlay.resolution_detected.connect(self.on_resolution_detected)
-            self.overlay.ready.connect(self.on_overlay_ready)
-            self.overlay.start(url, is_ui, alignment)
+            if use_separate_process:
+                # 별도 프로세스 모드
+                self.overlay = OverlayClient(self)
+                self.overlay.closed.connect(self.on_overlay_closed)
+                self.overlay.video_started.connect(self.on_video_started)
+                self.overlay.resolution_detected.connect(self.on_resolution_detected)
+                self.overlay.ready.connect(self.on_overlay_ready)
+                disable_gpu = self.main_window.settings_tab.overlay_disable_gpu.isChecked()
+                self.overlay.start(url, is_ui, alignment, disable_gpu)
+            else:
+                # 인프로세스 모드
+                self.overlay = ChzzkOverlay(self)
+                self.overlay.closed.connect(self.on_overlay_closed)
+                self.overlay.browser.page().video_started_signal.connect(self.on_video_started)
+                self.overlay.browser.page().resolution_detected_signal.connect(self.on_resolution_detected)
+                self.overlay.set_alignment(alignment)
+                self.overlay.show()
+                # 바로 ready 상태
+                QTimer.singleShot(100, self.on_overlay_ready)
             
             # 미리보기 창 동시 실행
             self.preview_window = OverlayPreviewWindow(self.overlay, self)

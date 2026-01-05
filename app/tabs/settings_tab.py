@@ -293,10 +293,18 @@ class SettingsTab(QWidget):
         self.chzzk_video_ui_toggle = QToggle("영도 재생바 표시")
         video_donation_layout.addWidget(self.chzzk_video_ui_toggle)
 
-        self.chzzk_overlay_hide_taskbar = QToggle("영도 오버레이 작업표시줄에서 숨기기")
+        self.chzzk_overlay_hide_taskbar = QToggle("영도 오버레이 작업표시줄에서 숨기기 (별도 프로세스 모드에서)")
         self.chzzk_overlay_hide_taskbar.setChecked(True)  # 기본값: 켜짐(숨기기)
         video_donation_layout.addWidget(self.chzzk_overlay_hide_taskbar)
         self.chzzk_overlay_hide_taskbar.clicked.connect(self.main_window.video_donation_tab.update_taskbar_visibility)
+
+        self.overlay_disable_gpu = QToggle("영도 오버레이 GPU 가속 비활성화 (프로그램 재시작 시 적용)")
+        self.overlay_disable_gpu.setChecked(False)  # 기본값: 꺼짐
+        video_donation_layout.addWidget(self.overlay_disable_gpu)
+
+        self.overlay_separate_process = QToggle("영도 오버레이 별도 프로세스로 실행 (오버레이 리셋하여 적용)")
+        self.overlay_separate_process.setChecked(True)  # 기본값: 켜짐 (별도 프로세스)
+        video_donation_layout.addWidget(self.overlay_separate_process)
 
         alignment_layout = QHBoxLayout()
         self.overlay_alignment_label = QLabel('쇼츠 모드 정렬:', self)
@@ -315,6 +323,13 @@ class SettingsTab(QWidget):
         self.how_to_video_donation_overlay = QPushButton("OBS 영상후원 오버레이 설정법")
         self.how_to_video_donation_overlay.clicked.connect(self.show_video_donation_overlay_guide)
         video_donation_layout.addWidget(self.how_to_video_donation_overlay)
+
+        log_layout = QHBoxLayout()
+        self.open_overlay_log_button = QPushButton("영도 오버레이 로그 폴더 열기")
+        self.open_overlay_log_button.clicked.connect(self.open_overlay_log_folder)
+        log_layout.addWidget(self.open_overlay_log_button)
+        log_layout.addStretch()
+        video_donation_layout.addLayout(log_layout)
         
         layout.addWidget(video_donation_setting_groupbox)
 
@@ -548,6 +563,12 @@ class SettingsTab(QWidget):
 
         self.remember_chat_popup_check.setChecked(mw.remember_chat_popup_check.isChecked())
         mw.remember_chat_popup_check = self.remember_chat_popup_check
+
+        self.overlay_disable_gpu.setChecked(mw.overlay_disable_gpu.isChecked())
+        mw.overlay_disable_gpu = self.overlay_disable_gpu
+
+        self.overlay_separate_process.setChecked(mw.overlay_separate_process.isChecked())
+        mw.overlay_separate_process = self.overlay_separate_process
 
         # kanetv8temp는 메인 윈도우에 남겨둠
 
@@ -818,6 +839,12 @@ class SettingsTab(QWidget):
     
     def show_donation_list_toggle_func(self):
         self.main_window.show_donation_list_toggle_func()
+
+    def open_overlay_log_folder(self):
+        """Open the overlay log folder in file explorer."""
+        log_folder = os.path.join(USERPATH, "BCU", "log_overlay")
+        os.makedirs(log_folder, exist_ok=True)
+        os.startfile(log_folder)
 
     def reset_settings(self):
         reply = QMessageBox.question(self, '설정 초기화', '모든 설정이 초기화되고 프로그램이 재시작됩니다.\n계속하시겠습니까?',

@@ -75,7 +75,7 @@ INJECT_JS = """
         return originalSetTimeout(callback, delay, ...args);
     };
 
-    // 2. Custom CSS injection
+    // 2. 투명 배경 및 커스텀 CSS 강제 적용 - DOM 로드 대기 후 실행
     function injectCustomCSS() {
         if (document.head) {
             const style = document.createElement('style');
@@ -105,11 +105,12 @@ INJECT_JS = """
                     pointer-events: none;
                 }
 
+                /* 기본(가로) 모드: 영상은 상단 1280x720 유지 (혹은 화면 꽉 차게 하려면 수정 필요하지만, 기존 유지) */
                 iframe[src*="youtube.com"],
                 iframe[src*="youtube-nocookie.com"],
                 iframe[src*="/embed-clip-donation/"],
                 iframe#chzzk_player {
-                    display: block !important;
+                    display: block !important; /* 추가 */
                     position: absolute !important;
                     top: 0 !important;
                     left: 0 !important;
@@ -119,7 +120,9 @@ INJECT_JS = """
                     box-shadow: none !important;
                     outline: none !important;
                     pointer-events: auto !important;
+                    display: block !important;
                     background-color: transparent !important;
+                    /* vertical-align: bottom !important; */
                 }
 
                 [class*="overlay_donation_contents"] {
@@ -135,6 +138,7 @@ INJECT_JS = """
                     overflow: visible !important;
                 }
 
+                /* ... 폰트 등 기존 유지 ... */
                 [class*="overlay_donation_description"],
                 [class*="overlay_donation_video_title"] {
                     width: 100% !important;
@@ -198,8 +202,9 @@ INJECT_JS = """
                     margin-right: 5px !important;
                 }
 
-                /* Portrait Mode */
+                /* 세로 모드 (Portrait) */
                 body.portrait [class*="overlay_donation_alarm"] {
+                    /* width는 main과 동일하게 1280 유지, height도 1254 유지 */
                 }
 
                 body.portrait iframe[src*="youtube.com"],
@@ -211,16 +216,17 @@ INJECT_JS = """
                 }
 
                 body.portrait [class*="overlay_donation_contents"] {
-                    top: 1024px !important;
-                    width: 576px !important;
+                    top: 1024px !important; /* 영상 아래에 배치 */
+                    width: 576px !important; /* 영상 너비에 맞춤 */
                     overflow: visible !important;
                 }
 
+                /* 정렬 클래스 - 1280 너비 기준 */
                 body.portrait.align-center iframe,
                 body.portrait.align-center #chzzk_player,
                 body.portrait.align-center [class*="overlay_donation_contents"] {
                    position: absolute !important;
-                   left: 352px !important;
+                   left: 352px !important; /* (1280-576)/2 */
                    margin: 0 !important;
                    transform: none !important;
                 }
@@ -236,7 +242,7 @@ INJECT_JS = """
                 body.portrait.align-right #chzzk_player,
                 body.portrait.align-right [class*="overlay_donation_contents"] {
                    position: absolute !important;
-                   left: 704px !important;
+                   left: 704px !important; /* 1280-576 */
                    margin: 0 !important;
                    transform: none !important;
                 }
@@ -244,10 +250,13 @@ INJECT_JS = """
             document.head.appendChild(style);
             console.log('[Overlay] Custom CSS Injected.');
         } else {
+            // 아직 head가 없으면 다음 프레임에 재시도
             requestAnimationFrame(injectCustomCSS);
         }
     }
     injectCustomCSS();
+    
+    // 혹시 모를 상황 대비 window loaded 이벤트에도 추가
     window.addEventListener('load', injectCustomCSS);
 })();
 
@@ -489,7 +498,25 @@ class OverlayWebPage(QWebEnginePage):
     video_started_signal = pyqtSignal(str)
     resolution_detected_signal = pyqtSignal(str)
 
+    def __init__(self, profile, parent=None):
+        super().__init__(profile, parent)
+        from app.overlay.overlay_logger import get_logger
+        self.logger = get_logger("overlay.console")
+
     def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+        # Log level mapping
+        level_names = {0: "INFO", 1: "WARNING", 2: "ERROR"}
+        level_name = level_names.get(level, "DEBUG")
+        
+        # Log to file with timestamp
+        log_message = f"[Console:{level_name}] {message}"
+        if level == 2:  # Error
+            self.logger.error(log_message)
+        elif level == 1:  # Warning
+            self.logger.warning(log_message)
+        else:
+            self.logger.info(log_message)
+        
         print(f"[Overlay Console] {message}")
         super().javaScriptConsoleMessage(level, message, lineNumber, sourceID)
         if message.startswith("유튜브 영상 재생 시작됨. 영상 주소:"):
@@ -807,7 +834,7 @@ class ChzzkOverlayProcess(QMainWindow):
                     applyToIframe(iframe);
                     iframe.addEventListener('load', () => applyToIframe(iframe));
                     setTimeout(() => applyToIframe(iframe), 1000);
-                    setTimeout(() => applyToIframe(iframe), 3000);
+                    setTimeout(() => applyToIframe(iframe), 3600);
                 }});
             }}
 
@@ -1011,13 +1038,31 @@ class IPCServer:
 
 def main():
     import argparse
+    from app.overlay.overlay_logger import setup_overlay_logger
+    
+    # Setup logger first
+    logger = setup_overlay_logger()
+    logger.info("="*50)
+    logger.info("Overlay Process Starting")
+    logger.info("="*50)
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', required=True, help='Overlay URL')
     parser.add_argument('--ui', action='store_true', help='Enable UI mode')
     parser.add_argument('--alignment', default='center', help='Alignment (left/center/right)')
-    args = parser.parse_args()
+    parser.add_argument('--remote-debugging-port', help='Remote debugging port')
+    parser.add_argument('--disable-gpu', action='store_true', help='Disable GPU acceleration')
+    args, unknown = parser.parse_known_args()
     
+    logger.info(f"URL: {args.url}")
+    logger.info(f"UI Mode: {args.ui}")
+    logger.info(f"Alignment: {args.alignment}")
+    logger.info(f"Disable GPU: {args.disable_gpu}")
+    
+    if args.remote_debugging_port:
+        os.environ["QTWEBENGINE_REMOTE_DEBUGGING_PORT"] = args.remote_debugging_port
+        logger.info(f"Remote debugging port: {args.remote_debugging_port}")
+
     # Chromium flags
     FLAGS = (
         "--enable-features=ProprietaryCodecs "
@@ -1026,13 +1071,26 @@ def main():
         "--disable-renderer-backgrounding "
         "--disable-backgrounding-occluded-windows"
     )
+    
+    if args.remote_debugging_port:
+        FLAGS += f" --remote-debugging-port={args.remote_debugging_port}"
+    
+    # GPU acceleration flags
+    if args.disable_gpu:
+        # Use ANGLE with software rendering instead of conflicting flags
+        FLAGS += " --disable-gpu --disable-gpu-sandbox --in-process-gpu --use-angle=swiftshader"
+        logger.info("GPU acceleration disabled - using ANGLE software rendering")
+        
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = FLAGS
+    logger.info(f"Chromium flags: {FLAGS}")
     
     for flag in FLAGS.split():
         sys.argv.append(flag)
     
+    logger.info("Creating QApplication...")
     app = QApplication(sys.argv)
     
+    logger.info("Creating ChzzkOverlayProcess...")
     # Create overlay
     overlay = ChzzkOverlayProcess(args.url, args.ui, args.alignment)
     

@@ -65,6 +65,15 @@ if __name__ == '__main__':
         "--disable-renderer-backgrounding "
         "--disable-backgrounding-occluded-windows"
     )
+    
+    # Check GPU disable setting before QApplication starts (for in-process mode)
+    from PyQt6.QtCore import QSettings
+    settings_path = os.path.join(USERPATH, "BCU", "BCU.ini")
+    settings = QSettings(settings_path, QSettings.Format.IniFormat)
+    if settings.value('overlay_disable_gpu', False, type=bool):
+        FLAGS += " --disable-gpu --disable-gpu-sandbox --in-process-gpu --use-angle=swiftshader"
+        print("[Main] GPU acceleration disabled for in-process overlay")
+    
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = FLAGS
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
