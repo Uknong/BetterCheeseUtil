@@ -247,7 +247,10 @@ class VideoDonationTab(QWidget):
                 chat_count += 1
                 cheese_count += sec
                 
-                self.result_box_video.setText(result_video + "\n" + self.result_box_video.toPlainText())
+                cursor = self.result_box_video.textCursor()
+                cursor.movePosition(cursor.MoveOperation.Start)
+                cursor.insertText(result_video + "\n")
+                self.result_box_video.setTextCursor(cursor)
                 QApplication.processEvents()
                 self.chat_count_label_video.setText(f"개수: {chat_count}")
                 hours_elapsede, remainder = divmod(cheese_count, 3600)

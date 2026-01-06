@@ -90,6 +90,9 @@ class Chatroom_Connector(QObject):
         self.send_notice_task: asyncio.Task | None = None
         
         self.unofficial_client_thread: threading.Thread | None = None
+        
+        self.log_file_handle = None 
+        self.current_log_path = None
 
     def start_async_operations(self, instance):
         """Starts the main async worker thread."""
@@ -511,11 +514,25 @@ class Chatroom_Connector(QObject):
             traceback.print_exc()
             self.instance.is_chat_connected = False
             self.update_connection_status.emit("채팅창: 🔴연결 오류")
+            
+    def close_log_file(self):
+        """열려 있는 로그 파일을 안전하게 닫습니다."""
+        if self.log_file_handle:
+            try:
+                self.log_file_handle.close()
+                print("Log file closed successfully.")
+            except Exception as e:
+                print(f"Error closing log file: {e}")
+            finally:
+                self.log_file_handle = None
+                self.current_log_path = None
 
     async def cleanup_async(self):
         """모든 비동기 작업 및 연결 정리"""
         print("Running async cleanup...")
         self.is_running = False
+        
+        self.close_log_file()
         
         if self.live_check_task and not self.live_check_task.done():
             self.live_check_task.cancel()
@@ -583,6 +600,8 @@ class Chatroom_Connector(QObject):
         """UI 즉시 정리 및 상태 초기화"""
         print("Running internal stop cleanup.")
         self.is_running = False
+        
+        self.close_log_file()
         
         self.client = None
         self.user_client = None
@@ -705,32 +724,45 @@ class Chatroom_Connector(QObject):
             return True
 
     async def periodic_live_check(self, instance):
-         """비공식 API로 주기적 라이브 상태 확인"""
-         print("Starting periodic live check task (unofficial).")
-         while self.is_running:
-             if self.streamer_ID:
-                 await self.check_live_status_unofficial(instance, is_periodic=True)
-             await asyncio.sleep(60)
-         print("Stopping periodic live check task.")
+        """비공식 API로 주기적 라이브 상태 확인"""
+        print("Starting periodic live check task (unofficial).")
+        while self.is_running:
+            if self.streamer_ID:
+                await self.check_live_status_unofficial(instance, is_periodic=True)
+            await asyncio.sleep(60)
+        print("Stopping periodic live check task.")
 
     async def logWrite(self, instance, chat_string, log_file_path):
-        """로그 파일 작성 (스트리머 ID 사용)"""
+        """로그 파일 작성 (최적화: 파일 핸들 유지)"""
         if not log_file_path or not self.streamer_ID: return
         try:
             path = os.path.dirname(log_file_path)
+            
+            # 날짜/ID 체크 및 경로 갱신 로직
             current_date = datetime.now().strftime("%Y-%m-%d")
+            target_log_path = log_file_path
+            
             if current_date not in os.path.basename(log_file_path) or self.streamer_ID not in os.path.basename(log_file_path):
                 base_log_name = f"{current_date}_#{self.streamer_ID}.log"
-                new_log_file_path = os.path.join(path, base_log_name)
-                self.log_file_path = new_log_file_path
-                #self.append_result_chat.emit(f"📅 날짜/ID 변경, 새 로그 파일: {self.log_file_path}")
-                log_file_path = self.log_file_path
+                target_log_path = os.path.join(path, base_log_name)
+                self.log_file_path = target_log_path # 멤버 변수 업데이트
 
-            os.makedirs(path, exist_ok=True)
-            with open(log_file_path, "a", encoding="UTF8") as file: file.write(chat_string + "\n")
-            QApplication.processEvents()
+            # [핵심] 파일이 열려있지 않거나 경로가 바뀌었으면 새로 열기
+            if self.log_file_handle is None or self.current_log_path != target_log_path:
+                self.close_log_file() # 기존 파일 닫기
+                os.makedirs(path, exist_ok=True)
+                self.log_file_handle = open(target_log_path, "a", encoding="UTF8")
+                self.current_log_path = target_log_path
+
+            # 파일 쓰기 및 플러시(즉시 저장)
+            self.log_file_handle.write(chat_string + "\n")
+            self.log_file_handle.flush() 
+            
+            # QApplication.processEvents() # <- 렉 유발 원인이므로 제거함
+
         except Exception as e:
-            print(f"Error writing to log file {log_file_path}: {e}")
+            print(f"Error writing to log file: {e}")
+            self.close_log_file() # 에러 발생 시 핸들 초기화
             self.append_result_chat.emit(f"❗ 로그 쓰기 오류: {e}")
 
     def timedelta_to_hms(self, date_time):
