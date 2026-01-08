@@ -1289,10 +1289,8 @@ class ChzzkOverlay(QMainWindow):
 
     def on_video_started(self, url):
         """영상 시작 시 호출되어 영상 타입을 확인하고 방향을 자동 전환합니다."""
+        # 정지 예약 로직은 video_donation_tab.py의 on_video_started에서 처리됨
         if self.parent() and self.parent().main_window:
-            if self.parent().main_window.remote_tab.toggle_reserve_pause_video_button.text() == "정지 예약 해제":
-                QTimer.singleShot(1500, lambda: self.parent().main_window.remote_tab.control_pause_button.click())
-                QTimer.singleShot(1500, lambda: self.parent().main_window.remote_tab.toggle_reserve_pause_video_button.click())
             if not self.parent().main_window.video_donation_tab.toggle_button_auto_detect_shorts.isChecked():
                 return
         try:
@@ -1336,13 +1334,15 @@ class ChzzkOverlay(QMainWindow):
             except Exception as e:
                 print(f"[Overlay] Auto-Orientation Error: {e}")
 
-    def refresh_page(self):
-        if self.parent():
-            url = self.parent().main_window.settings_tab.chzzk_video_url.text().strip().replace(" ","")
-            is_ui = self.parent().main_window.settings_tab.chzzk_video_ui_toggle.isChecked()
-        else:
-            url = "about:blank" # 기본값
-            is_ui = False # 기본값 (안전장치)
+    def refresh_page(self, url: str = "", is_ui: bool = False):
+        # 인자가 제공되지 않으면 parent에서 가져옴
+        if not url:
+            if self.parent():
+                url = self.parent().main_window.settings_tab.chzzk_video_url.text().strip().replace(" ","")
+                is_ui = self.parent().main_window.settings_tab.chzzk_video_ui_toggle.isChecked()
+            else:
+                url = "about:blank" # 기본값
+                is_ui = False # 기본값 (안전장치)
 
         url += "?cookie=true&w=1280&h=720"
         if is_ui:
