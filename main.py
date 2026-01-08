@@ -59,11 +59,15 @@ if __name__ == '__main__':
     os.environ["QTWEBENGINE_REMOTE_DEBUGGING_PORT"] = "9222"
     FLAGS = (
         "--remote-debugging-port=9222 "
-        "--enable-features=ProprietaryCodecs "
+        "--enable-features=ProprietaryCodecs,Vulkan " # Vulkan 활성화
         "--ffmpeg-branding=Chrome "
         "--disable-background-timer-throttling "
         "--disable-renderer-backgrounding "
-        "--disable-backgrounding-occluded-windows"
+        "--disable-backgrounding-occluded-windows "
+        "--ignore-gpu-blocklist "       # GPU 강제 사용
+        "--enable-gpu-rasterization "   # GPU 렌더링
+        "--enable-zero-copy "           # 메모리 복사 최소화
+        "--canvas-oop-rasterization"    # 캔버스 가속
     )
     
     # Check GPU disable setting before QApplication starts (for in-process mode)
