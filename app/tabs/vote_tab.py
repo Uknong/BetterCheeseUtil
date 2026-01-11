@@ -4,7 +4,8 @@ import traceback
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QLineEdit, QLabel, QFrame, QCheckBox, 
                              QSpinBox, QMessageBox, QTableWidget, 
-                             QTableWidgetItem, QAbstractItemView, QScrollArea, QSizePolicy, QTextEdit)
+                             QTableWidgetItem, QAbstractItemView, QScrollArea, QSizePolicy, QTextEdit,
+                             QComboBox)
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt, QTimer
 from collections import OrderedDict
@@ -84,8 +85,24 @@ class VoteTab(QWidget):
         self.chat_vote_multiple.setChecked(False)
         self.chat_vote_multiple.setEnabled(True)
         self.chat_vote_check.stateChanged.connect(lambda: self.chat_vote_multiple.setEnabled(self.chat_vote_check.isChecked()))
+        
+        # 인당 항목 수 제한
+        self.chat_vote_limit_label = QLabel("인당 ")
+        self.chat_vote_limit_label.setFont(QFont('Pretendard JP', 10))
+        self.chat_vote_limit = QSpinBox(self)
+        self.chat_vote_limit.setMinimum(2)
+        self.chat_vote_limit.setMaximum(30)
+        self.chat_vote_limit.setValue(3)
+        self.chat_vote_limit.setSuffix("개 항목")
+        self.chat_vote_limit.setFixedWidth(90)
+        self.chat_vote_limit.setEnabled(False)
+        self.chat_vote_multiple.stateChanged.connect(lambda: self.chat_vote_limit.setEnabled(self.chat_vote_multiple.isChecked() and self.chat_vote_check.isChecked()))
+        self.chat_vote_check.stateChanged.connect(lambda: self.chat_vote_limit.setEnabled(self.chat_vote_multiple.isChecked() and self.chat_vote_check.isChecked()))
+        
         chat_vote_layout.addWidget(self.chat_vote_check)
         chat_vote_layout.addWidget(self.chat_vote_multiple)
+        chat_vote_layout.addWidget(self.chat_vote_limit_label)
+        chat_vote_layout.addWidget(self.chat_vote_limit)
         chat_vote_layout.addStretch()
         layout.addLayout(chat_vote_layout)
 
@@ -145,6 +162,23 @@ class VoteTab(QWidget):
         count_layout.addWidget(self.result_count_vote)
         count_layout.addStretch()
         frame_layout.addLayout(count_layout)
+
+        # 투표 항목 수 자동 입력 드롭다운
+        auto_fill_layout = QHBoxLayout()
+        auto_fill_label = QLabel("항목 수 자동 입력:")
+        auto_fill_label.setFont(QFont('Pretendard JP', 12))
+        auto_fill_layout.addWidget(auto_fill_label)
+        
+        self.vote_item_count_combo = QComboBox(self)
+        self.vote_item_count_combo.setFont(QFont('Pretendard JP', 12))
+        self.vote_item_count_combo.setFixedWidth(80)
+        self.vote_item_count_combo.addItem("선택")  # 기본 선택 항목
+        for i in range(2, 11):  # 2부터 10까지
+            self.vote_item_count_combo.addItem(str(i))
+        self.vote_item_count_combo.currentIndexChanged.connect(self.auto_fill_vote_items)
+        auto_fill_layout.addWidget(self.vote_item_count_combo)
+        auto_fill_layout.addStretch()
+        frame_layout.addLayout(auto_fill_layout)
 
         title_layout = QHBoxLayout()
         self.vote_title = QLineEdit(self)
@@ -258,6 +292,25 @@ class VoteTab(QWidget):
         mw.vote_option_check1 = self.vote_option_check1
         mw.vote_option_count = self.vote_option_count
 
+    def auto_fill_vote_items(self, index):
+        """드롭다운에서 항목 수를 선택하면 투표 항목을 리셋하고 숫자로 자동 입력"""
+        if index == 0:  # "선택" 항목이 선택된 경우 무시
+            return
+        
+        count = int(self.vote_item_count_combo.currentText())
+        
+        # 모든 항목 초기화 후 선택된 수만큼 숫자로 입력
+        for i in range(30):
+            if i < count:
+                self.result_table_vote.setItem(i, 1, QTableWidgetItem(str(i + 1)))
+            else:
+                self.result_table_vote.setItem(i, 1, QTableWidgetItem(""))
+        
+        # 드롭다운을 다시 "선택"으로 리셋
+        self.vote_item_count_combo.blockSignals(True)
+        self.vote_item_count_combo.setCurrentIndex(0)
+        self.vote_item_count_combo.blockSignals(False)
+
     def vote_done_confirm(self):
         reply = QMessageBox.question(self, '경고', '투표를 정말 종료하시겠습니까?',
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
@@ -298,6 +351,8 @@ class VoteTab(QWidget):
         self.donation_vote_multiple.show()
         self.chat_vote_check.show()
         self.chat_vote_multiple.show()
+        self.chat_vote_limit_label.show()
+        self.chat_vote_limit.show()
         
         self.stop_timer_vote()
     
@@ -329,7 +384,8 @@ class VoteTab(QWidget):
                 if self.chat_vote_check.isChecked() and not self.donation_vote_check.isChecked():
                     self.result_box_vote.setFixedHeight(150)
                     if self.chat_vote_multiple.isChecked(): # 채팅 투표(복수 허용)
-                        self.result_box_vote.setText(f"투표 진행 중입니다. {VOTE_STOP_BUTTON_TEXT} 버튼을 눌러 투표를 종료하세요.\n명령어: !투표 (숫자)\n[[💬채팅 투표]]\n  ✅여러 번 입력하여 복수 투표 가능합니다.\n  ✅한 사람이 여러 항목에 투표하는 것도 가능합니다.")
+                        limit = self.chat_vote_limit.value()
+                        self.result_box_vote.setText(f"투표 진행 중입니다. {VOTE_STOP_BUTTON_TEXT} 버튼을 눌러 투표를 종료하세요.\n명령어: !투표 (숫자)\n[[💬채팅 투표]]\n  ✅1인당 최대 {limit}개 항목까지 투표 가능합니다.\n  ✅항목당 1회만 투표됩니다. (중복 투표 불가)")
                     else: # 채팅 투표(복수 불가)
                         self.result_box_vote.setText(f"투표 진행 중입니다. {VOTE_STOP_BUTTON_TEXT} 버튼을 눌러 투표를 종료하세요.\n명령어: !투표 (숫자)\n[[💬채팅 투표]]\n  ✅재입력시 본인 투표 수정이 가능합니다.\n  🚫복수 투표 불가합니다.")
 
@@ -343,9 +399,11 @@ class VoteTab(QWidget):
                 elif self.chat_vote_check.isChecked() and self.donation_vote_check.isChecked():
                     self.result_box_vote.setFixedHeight(280)
                     if self.chat_vote_multiple.isChecked() and self.donation_vote_multiple.isChecked(): # 채팅 투표(복수 허용) + 도네 투표(복수 허용)
-                        self.result_box_vote.setText(f"투표 진행 중입니다. {VOTE_STOP_BUTTON_TEXT} 버튼을 눌러 투표를 종료하세요.\n명령어: !투표 (숫자)\n[[💬채팅 투표]]\n  ✅여러 번 입력하여 복수 투표 가능합니다.\n  ✅한 사람이 여러 항목에 투표하는 것도 가능합니다.\n[[💸도네 투표]]\n  {self.donation_vote_number.value()}치즈 당 투표 1번입니다. (복수 투표 가능)\n  ✅익명 후원 투표 가능합니다.\n  ✅여러 번 후원하여 복수 투표 가능합니다.\n  ✅한 사람이 여러 항목에 투표하는 것도 가능합니다.")
+                        limit = self.chat_vote_limit.value()
+                        self.result_box_vote.setText(f"투표 진행 중입니다. {VOTE_STOP_BUTTON_TEXT} 버튼을 눌러 투표를 종료하세요.\n명령어: !투표 (숫자)\n[[💬채팅 투표]]\n  ✅1인당 최대 {limit}개 항목까지 투표 가능합니다.\n  ✅항목당 1회만 투표됩니다. (중복 투표 불가)\n[[💸도네 투표]]\n  {self.donation_vote_number.value()}치즈 당 투표 1번입니다. (복수 투표 가능)\n  ✅익명 후원 투표 가능합니다.\n  ✅여러 번 후원하여 복수 투표 가능합니다.\n  ✅한 사람이 여러 항목에 투표하는 것도 가능합니다.")
                     elif self.chat_vote_multiple.isChecked() and not self.donation_vote_multiple.isChecked(): # 채팅 투표(복수 허용) + 도네 투표(복수 불가)
-                        self.result_box_vote.setText(f"투표 진행 중입니다. {VOTE_STOP_BUTTON_TEXT} 버튼을 눌러 투표를 종료하세요.\n명령어: !투표 (숫자)\n[[💬채팅 투표]]\n  ✅여러 번 입력하여 복수 투표 가능합니다.\n  ✅한 사람이 여러 항목에 투표하는 것도 가능합니다.\n[[💸도네 투표]]\n  {self.donation_vote_number.value()}치즈 이상 후원 시 1회 투표됩니다. (1인당 1투표)\n  🚫복수 투표 불가합니다.\n  🚫익명 후원 투표 불가합니다.\n  🚫투표 수정 불가합니다.")
+                        limit = self.chat_vote_limit.value()
+                        self.result_box_vote.setText(f"투표 진행 중입니다. {VOTE_STOP_BUTTON_TEXT} 버튼을 눌러 투표를 종료하세요.\n명령어: !투표 (숫자)\n[[💬채팅 투표]]\n  ✅1인당 최대 {limit}개 항목까지 투표 가능합니다.\n  ✅항목당 1회만 투표됩니다. (중복 투표 불가)\n[[💸도네 투표]]\n  {self.donation_vote_number.value()}치즈 이상 후원 시 1회 투표됩니다. (1인당 1투표)\n  🚫복수 투표 불가합니다.\n  🚫익명 후원 투표 불가합니다.\n  🚫투표 수정 불가합니다.")
                     elif not self.chat_vote_multiple.isChecked() and self.donation_vote_multiple.isChecked(): # 채팅 투표(복수 불가) + 도네 투표(복수 허용)
                         self.result_box_vote.setText(f"투표 진행 중입니다. {VOTE_STOP_BUTTON_TEXT} 버튼을 눌러 투표를 종료하세요.\n명령어: !투표 (숫자)\n[[💬채팅 투표]]\n  ✅재입력시 본인 투표 수정이 가능합니다.\n  🚫복수 투표 불가합니다.\n[[💸도네 투표]]\n  {self.donation_vote_number.value()}치즈 당 투표 1번입니다. (복수 투표 가능)\n  ✅익명 후원 투표 가능합니다.\n  ✅여러 번 후원하여 복수 투표 가능합니다.\n  ✅한 사람이 여러 항목에 투표하는 것도 가능합니다.")
                     else: # 채팅 투표(복수 불가) + 도네 투표(복수 불가)
@@ -360,6 +418,8 @@ class VoteTab(QWidget):
                 self.donation_vote_multiple.hide()
                 self.chat_vote_check.hide()
                 self.chat_vote_multiple.hide()
+                self.chat_vote_limit_label.hide()
+                self.chat_vote_limit.hide()
                 self.result_table_vote.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
                 self.result_button_vote.setEnabled(True)
                 self.result_button_vote.show()
@@ -519,6 +579,16 @@ class VoteTab(QWidget):
                 
                 if vote_num_str in self.vote_num_list:
                     if self.chat_vote_multiple.isChecked():
+                        # 복수 투표: 인당 항목 수 제한 적용
+                        # 1. 이미 해당 항목에 투표했는지 확인 (항목당 1회만)
+                        if nick in self.result_vote[vote_num_str]:
+                            return  # 이미 이 항목에 투표함
+                        
+                        # 2. 투표한 항목 수 확인
+                        voted_items_count = sum(1 for voters in self.result_vote.values() if nick in voters)
+                        if voted_items_count >= self.chat_vote_limit.value():
+                            return  # 이미 제한 개수만큼 투표함
+                        
                         self.result_vote[vote_num_str].append(nick)
                     else: # 복수 투표 불허
                         for num, voters in self.result_vote.items():
