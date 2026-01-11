@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLineEdit, QLabel, QFrame, QCheckBox, 
                              QSpinBox, QMessageBox, QTableWidget, 
                              QTableWidgetItem, QAbstractItemView, QScrollArea, QSizePolicy, QTextEdit,
-                             QComboBox)
+                             QComboBox, QHeaderView)
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt, QTimer
 from collections import OrderedDict
@@ -25,7 +25,9 @@ class VoteTab(QWidget):
         self.result_vote = {}
         self.result_vote_donation = {}
         self.result_vote_total = {}
+        self.result_vote_total = {}
         self.vote_option_time_cnt = 0
+        self.is_sorted_by_rank = False
         
         layout = QVBoxLayout()
 
@@ -193,12 +195,14 @@ class VoteTab(QWidget):
         self.result_table_vote.setHorizontalHeaderLabels(['번호', '항목'])
         self.result_table_vote.setFont(QFont('Pretendard JP', 18))
         self.result_table_vote.horizontalHeader().setStretchLastSection(True)
+        self.result_table_vote.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.result_table_vote.setColumnWidth(0, 60)
         frame_layout.addWidget(self.result_table_vote)
         layout.addWidget(self.frame_vote_input)
 
         self.result_table_vote.setRowCount(30)
         for i in range(30):
-            item = QTableWidgetItem(f"!투표 {str(i+1)}")
+            item = QTableWidgetItem(f"{str(i+1)}번")
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.result_table_vote.setItem(i, 0, item)
             self.result_table_vote.setItem(i, 1, QTableWidgetItem(""))
@@ -241,11 +245,20 @@ class VoteTab(QWidget):
         frame0_layout.addWidget(scroll_area)
         frameM_layout.addWidget(frame0)
 
+        buttons_layout = QHBoxLayout()
+        self.vote_sort_button = QPushButton()
+        self.vote_sort_button.setText("순위순 정렬")
+        self.vote_sort_button.setFont(QFont('Pretendard JP', 14))
+        self.vote_sort_button.clicked.connect(self.toggle_sort_rank)
+        buttons_layout.addWidget(self.vote_sort_button)
+
         self.vote_user_list_button = QPushButton()
         self.vote_user_list_button.setText("투표자 명단")
         self.vote_user_list_button.setFont(QFont('Pretendard JP', 14))
         self.vote_user_list_button.clicked.connect(lambda : self.show_voters(self.result_vote_total))
-        frameM_layout.addWidget(self.vote_user_list_button)
+        buttons_layout.addWidget(self.vote_user_list_button)
+
+        frameM_layout.addLayout(buttons_layout)
 
         self.vote_frame2 = QFrame(self)
         self.vote_frame2.setFrameShape(QFrame.Shape.StyledPanel)
@@ -330,7 +343,7 @@ class VoteTab(QWidget):
         self.vote_title.setReadOnly(False)
 
         for i in range(10):
-            item = QTableWidgetItem(f"!투표 {str(i+1)}")
+            item = QTableWidgetItem(f"{str(i+1)}번")
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.result_table_vote.setItem(i, 0, item)
             self.result_table_vote.setItem(i, 1, QTableWidgetItem(""))
@@ -446,6 +459,14 @@ class VoteTab(QWidget):
             self.closeTimeVote = datetime.now()
             self.stop_timer_vote()
 
+    def toggle_sort_rank(self):
+        self.is_sorted_by_rank = not self.is_sorted_by_rank
+        if self.is_sorted_by_rank:
+            self.vote_sort_button.setText("번호순 정렬")
+        else:
+            self.vote_sort_button.setText("순위순 정렬")
+        self.vote_count()
+
     def vote_people_count(self):
         try:
             all_keys = list(self.result_vote.keys()) + [
@@ -487,18 +508,50 @@ class VoteTab(QWidget):
                 for i in range(len(self.items_text_vote), len(self.vote_num_list)):
                     self.items_text_vote.append(f"항목 {i+1}")
             
-            for vote_number, voters in self.result_vote_total.items():
+            # 정렬 로직
+            sorted_items = []
+            if self.is_sorted_by_rank:
+                # 득표수 내림차순 정렬 (득표수 같으면 번호순)
+                # self.result_vote_total.items()는 (번호, 투표자목록) 튜플 리스트
+                # 번호는 문자열이므로 int로 변환해 비교해야 함. 
+                # 득표수 내림차순(-len), 번호 오름차순(int key)
+                sorted_items = sorted(
+                    self.result_vote_total.items(), 
+                    key=lambda item: (-len(item[1]), int(item[0]))
+                )
+            else:
+                # 번호순 정렬
+                sorted_items = self.result_vote_total.items()
+
+            current_rank = 1
+            last_count = -1
+            same_rank_stack = 0 # 동점자 수 누적
+            
+            for index, (vote_number, voters) in enumerate(sorted_items):
                 vote_index = int(vote_number) - 1
                 if vote_index < 0 or vote_index >= len(self.items_text_vote):
                     print(f"Error: 유효하지 않은 투표 번호 {vote_number}")
                     continue
                     
                 item_text = self.items_text_vote[vote_index]
+                vote_count_val = len(voters)
                 
+                # 순위 계산 (정렬 상태일 때만 의미 있음, 하지만 항상 계산해도 무방)
+                if self.is_sorted_by_rank:
+                    if last_count != vote_count_val:
+                        current_rank += same_rank_stack
+                        same_rank_stack = 1
+                    else:
+                        same_rank_stack += 1
+                    last_count = vote_count_val
+                    rank_text = f"[{current_rank}위]"
+                else:
+                    rank_text = ""
+
                 if total_votes == 0: 
-                    label = QLabel(f'!투표 {vote_number}: {len(voters)}명 (0%)\n{item_text}')
+                    label = QLabel(f'{rank_text} {vote_number}번: {vote_count_val}명 (0%)\n{item_text}')
                 else: 
-                    label = QLabel(f'!투표 {vote_number}: {len(voters)}명 ({round(len(voters)*100/total_votes, 3)}%)\n{item_text}')
+                    label = QLabel(f'{rank_text} {vote_number}번: {vote_count_val}명 ({round(vote_count_val*100/total_votes, 3)}%)\n{item_text}')
                 
                 label.setFont(QFont('Pretendard JP', 18))
                 if total_votes == 0: self.vote_bar = VoteBar(1, voters, self)

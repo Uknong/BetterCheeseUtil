@@ -353,7 +353,7 @@ class VoteBar(QWidget):
         super().__init__(parent)
         self.total_votes = total_votes
         self.voters = voters
-        self.setMinimumHeight(30)
+        self.setMinimumHeight(15)
 
     def paintEvent(self, event):
         painter = QPainter(self)
