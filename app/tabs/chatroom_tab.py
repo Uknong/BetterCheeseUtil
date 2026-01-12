@@ -221,7 +221,9 @@ class ChatroomTab(QWidget):
                 popupCloseBtn: '[class*="popup_button__"]' // [Added] Close button selector
             };
 
-            let isWinnerPrinted = false; 
+            let isWinnerPrinted = false;
+            let previousState = null; // [NEW] Track previous state for transition detection
+            let closedStateRefreshDone = false; // [NEW] Prevent multiple refreshes
             
             // API Send Helper
             const sendUpdate = (payload) => {
@@ -292,25 +294,16 @@ class ChatroomTab(QWidget):
                     }
 
                     // [Stale Check Strategy]
-                    // If Banner says 'Result' but no Winner found for 3 seconds -> Force Re-open Popup
+                    // If Banner says 'Result' but no Winner found -> Force Re-open Popup immediately
                     const bannerTextForCheck = document.querySelector(SELECTORS.bannerStatus)?.innerText || "";
                     if ((bannerTextForCheck.includes("결과") || bannerTextForCheck.includes("확인하기")) && !globalWinnerName) {
-                        if (typeof window.staleWinnerCount === 'undefined') window.staleWinnerCount = 0;
-                        window.staleWinnerCount++;
-                        console.log(`[BCU] Result Phase but no winner... (${window.staleWinnerCount}/3)`);
+                        console.log("[BCU] Result Phase but no winner - Forcing Popup Close/Re-open immediately.");
                         
-                        if (window.staleWinnerCount > 3) {
-                             console.log("[BCU] Stale Result Detected. Forcing Popup Close/Re-open.");
-                             
-                             const closeBtn = document.querySelector(SELECTORS.popupContainer).childNodes[2].childNodes[0]
-                             if (closeBtn) closeBtn.click();
-                             else triggerBtn.click(); // Fallback
-                             
-                             window.staleWinnerCount = 0;
-                             return; // Skip this loop, next loop will re-open
-                        }
-                    } else {
-                        window.staleWinnerCount = 0;
+                        const closeBtn = document.querySelector(SELECTORS.popupContainer)?.childNodes[2]?.childNodes[0];
+                        if (closeBtn) closeBtn.click();
+                        else triggerBtn.click(); // Fallback
+                        
+                        return; // Skip this loop, next loop will re-open
                     }
                     // [Result Phase Check] - Check banner text for '결과' OR if we found a winner
                     const bannerText = document.querySelector(SELECTORS.bannerStatus)?.innerText || "";
@@ -381,6 +374,22 @@ class ChatroomTab(QWidget):
 
                     // [상태 B] 참여 마감 (Only if NOT Result Phase)
                     if (timerText.includes('마감') && !timerText.includes('후')) {
+                         // [NEW] Detect transition from ONGOING to CLOSED
+                         if (previousState === 'ONGOING' && !closedStateRefreshDone) {
+                             console.log("%c[BCU] 상태 전환 감지: 진행중 -> 결과 대기중. 페이지 새로고침 요청...", "color: #ff9900; font-weight: bold;");
+                             closedStateRefreshDone = true;
+                             // Request page refresh via Python-exposed function
+                             if (typeof window.bcuRefreshForClosedState === 'function') {
+                                 window.bcuRefreshForClosedState();
+                             } else {
+                                 // Fallback: Direct page reload (will require re-injection)
+                                 window.bcu_prediction_scraper_running = false;
+                                 location.reload();
+                             }
+                             return;
+                         }
+                         previousState = 'CLOSED';
+                         
                          // Send items even if closed, but hide timer
                          sendUpdate({ 
                              state: 'CLOSED',
@@ -397,6 +406,11 @@ class ChatroomTab(QWidget):
                     if (items.length > 0) {
                         console.clear(); 
                         console.log(`%c🔴 실시간 | ${title} | ${timerText}`, "color: #00ffa3; font-weight: bold;");
+                        
+                        // [NEW] Update state tracking for transition detection
+                        previousState = 'ONGOING';
+                        closedStateRefreshDone = false; // Reset for next prediction cycle
+                        
                         sendUpdate({
                             state: 'ONGOING',
                             title: title,
@@ -416,6 +430,50 @@ class ChatroomTab(QWidget):
         })();
         """
         self.chatroom_chzzk_browser.page().runJavaScript(js_code)
+        
+        # [NEW] Register bcuRefreshForClosedState function for CLOSED state transition
+        refresh_callback_code = """
+        window.bcuRefreshForClosedState = function() {
+            console.log("[BCU] bcuRefreshForClosedState called - requesting page refresh...");
+            window.bcu_prediction_scraper_running = false;
+            // Signal Python to refresh and re-inject by sending a special POST
+            fetch('http://127.0.0.1:5000/request_scraper_refresh', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: 'refresh_for_closed' })
+            }).catch(err => {
+                console.warn("[BCU] Refresh request failed, using fallback reload:", err);
+                location.reload();
+            });
+        };
+        """
+        self.chatroom_chzzk_browser.page().runJavaScript(refresh_callback_code)
+        
+        # [NEW] Setup page refresh handler using loadFinished signal for re-injection
+        if not hasattr(self, '_refresh_for_closed_connected'):
+            self.chatroom_chzzk_browser.page().loadFinished.connect(self._on_page_reloaded_for_prediction)
+            self._refresh_for_closed_connected = True
+
+    @pyqtSlot()
+    def refresh_page_and_reinject_scraper(self):
+        """Refreshes the chat page and marks for scraper re-injection.
+        Called when transitioning from ONGOING to CLOSED state to get final betting percentages."""
+        print("[ChatroomTab] refresh_page_and_reinject_scraper called - refreshing page...")
+        self._pending_scraper_reinject = True
+        self.prediction_scraper_injected = False
+        current_url = self.chatroom_chzzk_browser.url().toString()
+        self.chatroom_chzzk_browser.setUrl(QUrl(current_url))
+    
+    def _on_page_reloaded_for_prediction(self, success):
+        """Handler for page load finished, re-injects scraper if pending."""
+        if hasattr(self, '_pending_scraper_reinject') and self._pending_scraper_reinject:
+            if success:
+                print("[ChatroomTab] Page reloaded for CLOSED state - re-injecting scraper after delay...")
+                self._pending_scraper_reinject = False
+                # Delay injection to ensure page is fully loaded
+                QTimer.singleShot(1500, self.inject_prediction_scraper)
+            else:
+                print("[ChatroomTab] Page reload failed, will retry...")
 
 
 

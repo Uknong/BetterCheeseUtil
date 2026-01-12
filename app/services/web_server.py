@@ -69,6 +69,27 @@ def update_prediction_winner():
         return {"msg": "winner updated"}, 200
     return {"error": "no winner"}, 400
 
+@appW.route('/request_scraper_refresh', methods=['POST'])
+def request_scraper_refresh():
+    """Called by JS scraper when transitioning from ONGOING to CLOSED state.
+    Triggers page refresh and scraper re-injection to get final betting percentages."""
+    data = request.get_json()
+    action = data.get("action", "")
+    
+    if action == "refresh_for_closed" and main_app_instance:
+        try:
+            from PyQt6.QtCore import QMetaObject, Qt
+            # Invoke the refresh method on the chatroom tab
+            QMetaObject.invokeMethod(main_app_instance.chatroom_tab, 
+                                     "refresh_page_and_reinject_scraper",
+                                     Qt.ConnectionType.QueuedConnection)
+            print("[WebServer] request_scraper_refresh: Triggered page refresh for CLOSED state")
+            return {"msg": "refresh triggered"}, 200
+        except Exception as e:
+            print(f"[WebServer] Error in request_scraper_refresh: {e}")
+            return {"error": str(e)}, 500
+    return {"error": "invalid action or no main_app_instance"}, 400
+
 @appW.route('/open_url', methods=['POST'])
 def open_url():
     data = request.get_json()  # JSON 데이터 가져오기
