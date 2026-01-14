@@ -111,6 +111,14 @@ class VideoDonationTab(QWidget):
         self.reset_overlay_button.clicked.connect(self.reset_overlay)
         quick_settings_layout.addWidget(self.reset_overlay_button)
 
+        self.force_connect_button_tab = QPushButton("강제연결", self)
+        self.force_connect_button_tab.clicked.connect(lambda: self.video_control('connect'))
+        quick_settings_layout.addWidget(self.force_connect_button_tab)
+
+        self.force_skip_button_tab = QPushButton("강제스킵", self)
+        self.force_skip_button_tab.clicked.connect(lambda: self.video_control('force_skip'))
+        quick_settings_layout.addWidget(self.force_skip_button_tab)
+
         quick_settings_layout.addStretch()
         layout.addLayout(quick_settings_layout)
 
@@ -119,6 +127,7 @@ class VideoDonationTab(QWidget):
         self.rescue_overlay_button.hide() # 기본적으로 숨김
         self.rescue_overlay_button.clicked.connect(self.toggle_overlay_position)
         rescue_layout.addWidget(self.rescue_overlay_button)
+        
         rescue_layout.addStretch()
         layout.addLayout(rescue_layout)
 
@@ -700,23 +709,36 @@ class VideoDonationTab(QWidget):
             self.overlay.simulate_skip()
             self.overlay.simulate_key('end')
         elif action == 'home':
-            # 맨 앞으로 - Home 키 전송
-            self.overlay.simulate_key('home')
+            # 맨 앞으로 - 스크립트로 0초 이동 및 일시정지
+            if hasattr(self.overlay, 'seek_to_start'):
+                self.overlay.seek_to_start()
+            else:
+                self.overlay.simulate_key('home')
         elif action == 'space':
-            # 재생/정지 - 영상 중앙 클릭
-            if hasattr(self.overlay, 'is_portrait') and self.overlay.is_portrait:
-                alignment = getattr(self.overlay, 'alignment', 'center')
-                if alignment == 'left':
-                    click_x = 288
-                elif alignment == 'right':
-                    click_x = 992
+            # 재생/정지 - 스크립트로 토글
+            if hasattr(self.overlay, 'toggle_play_pause'):
+                self.overlay.toggle_play_pause()
+            else:
+                # Fallback: 영상 중앙 클릭
+                if hasattr(self.overlay, 'is_portrait') and self.overlay.is_portrait:
+                    alignment = getattr(self.overlay, 'alignment', 'center')
+                    if alignment == 'left':
+                        click_x = 288
+                    elif alignment == 'right':
+                        click_x = 992
+                    else:
+                        click_x = 640
+                    click_y = 512
                 else:
                     click_x = 640
-                click_y = 512
-            else:
-                click_x = 640
-                click_y = 360
-            self.overlay.simulate_click(click_x, click_y)
+                    click_y = 360
+                self.overlay.simulate_click(click_x, click_y)
+        elif action == 'connect':
+            if hasattr(self.overlay, 'force_connect'):
+                self.overlay.force_connect()
+        elif action == 'force_skip':
+            if hasattr(self.overlay, 'force_skip'):
+                self.overlay.force_skip()
 
     def video_volume_control(self, volume):
         if self.overlay:

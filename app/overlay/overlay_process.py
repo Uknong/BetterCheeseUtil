@@ -53,6 +53,186 @@ INJECT_JS = """
         };
     }
 
+    // 8. BCU Force Connect (Buffer Reset) - 영상 강제 연결
+    (function() {
+        // Iframe Logic: Listen for force connect command
+        if (window.top !== window.self) {
+             window.addEventListener('message', function(e) {
+                 if (e.data === 'BCU_FORCE_CONNECT') {
+                     console.log('[BCU] Force connect executing in iframe...');
+                     
+                     // Strategy 1: Direct Player Object API (Best for YouTube)
+                     var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                     if (player && player.seekTo && typeof player.seekTo === 'function') {
+                         console.log('[BCU] Using movie_player API');
+                         try {
+                             var dur = player.getDuration();
+                             var curr = player.getCurrentTime();
+                             
+                             // Seek to near end to clear "end" state
+                             player.seekTo(dur - 3, true);
+                             
+                             setTimeout(function() {
+                                 // Seek back to original time
+                                 player.seekTo(curr, true);
+                                 player.playVideo();
+                             }, 10);
+                             return; // Success
+                         } catch(err) {
+                             console.log('[BCU] Player API error:', err);
+                         }
+                     }
+                     
+                     // Strategy 2: PostMessage (Fallback)
+                     // ... (omitted as it failed previously, straight to fallback or done)
+                     
+                     // Strategy 3: HTML5 Video Element (Ultimate Fallback)
+                     var v = document.querySelector('video');
+                     if (v && v.duration) {
+                         console.log('[BCU] Using HTML5 Video API Fallback');
+                         let t = v.currentTime;
+                         let d = v.duration;
+                         
+                         v.currentTime = d - 3;
+                         setTimeout(function() {
+                            v.currentTime = t;
+                            v.play();
+                         }, 10);
+                     }
+                 }
+             });
+        }
+
+        // Main Frame Logic
+        window.bcuForceConnect = function() {
+            console.log('[BCU] Force connect triggered');
+            
+            // 1. Send command to all iframes
+            const iframes = document.getElementsByTagName('iframe');
+            for (let i = 0; i < iframes.length; i++) {
+                try {
+                    iframes[i].contentWindow.postMessage('BCU_FORCE_CONNECT', '*');
+                } catch(e) {}
+            }
+
+            // 2. Check local video tags (Direct video file or main frame only)
+            // Just for safety, try player API here too
+            var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+             if (player && player.seekTo && typeof player.seekTo === 'function') {
+                 try {
+                     var dur = player.getDuration();
+                     var curr = player.getCurrentTime();
+                     player.seekTo(dur - 3, true);
+                     setTimeout(function() {
+                         player.seekTo(curr, true);
+                         player.playVideo();
+                     }, 10);
+                     return;
+                 } catch(e) {}
+             }
+
+            document.querySelectorAll('video').forEach(v => {
+                if(v.duration) {
+                    let t = v.currentTime;
+                    let d = v.duration;
+                    v.currentTime = Math.max(0, d - 3);
+                    setTimeout(() => {
+                        v.currentTime = t;
+                        v.play();
+                    }, 10);
+                }
+            });
+        };
+    })();
+
+    // 9. BCU Seek To Start - 영상 맨 앞으로 이동 및 일시정지
+    (function() {
+        // Iframe Logic
+        if (window.top !== window.self) {
+             window.addEventListener('message', function(e) {
+                 if (e.data === 'BCU_SEEK_TO_START') {
+                     console.log('[BCU] Seek to start in iframe...');
+                     var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                     if (player && player.seekTo) {
+                         try {
+                             player.seekTo(0, true);
+                             player.pauseVideo();
+                             return;
+                         } catch(e) {}
+                     }
+                     var v = document.querySelector('video');
+                     if (v) {
+                         v.currentTime = 0;
+                         v.pause();
+                     }
+                 }
+             });
+        }
+        
+        // Main Frame Logic
+        window.bcuSeekToStart = function() {
+            console.log('[BCU] Seek to start triggered');
+            const iframes = document.getElementsByTagName('iframe');
+            for (let i = 0; i < iframes.length; i++) {
+                try { iframes[i].contentWindow.postMessage('BCU_SEEK_TO_START', '*'); } catch(e) {}
+            }
+            var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+            if (player && player.seekTo) {
+                try { player.seekTo(0, true); player.pauseVideo(); return; } catch(e) {}
+            }
+            document.querySelectorAll('video').forEach(v => {
+                v.currentTime = 0;
+                v.pause();
+            });
+        };
+    })();
+
+    // 10. BCU Toggle Play/Pause - 재생/정지 토글
+    (function() {
+        // Iframe Logic
+        if (window.top !== window.self) {
+             window.addEventListener('message', function(e) {
+                 if (e.data === 'BCU_TOGGLE_PLAY_PAUSE') {
+                     console.log('[BCU] Toggle play/pause in iframe...');
+                     var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                     if (player && player.getPlayerState) {
+                         try {
+                             var state = player.getPlayerState();
+                             if (state === 1) { player.pauseVideo(); }
+                             else { player.playVideo(); }
+                             return;
+                         } catch(e) {}
+                     }
+                     var v = document.querySelector('video');
+                     if (v) {
+                         if (v.paused) { v.play(); }
+                         else { v.pause(); }
+                     }
+                 }
+             });
+        }
+        
+        // Main Frame Logic
+        window.bcuTogglePlayPause = function() {
+            console.log('[BCU] Toggle play/pause triggered');
+            const iframes = document.getElementsByTagName('iframe');
+            for (let i = 0; i < iframes.length; i++) {
+                try { iframes[i].contentWindow.postMessage('BCU_TOGGLE_PLAY_PAUSE', '*'); } catch(e) {}
+            }
+            var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+            if (player && player.getPlayerState) {
+                try {
+                    var state = player.getPlayerState();
+                    if (state === 1) { player.pauseVideo(); } else { player.playVideo(); }
+                    return;
+                } catch(e) {}
+            }
+            document.querySelectorAll('video').forEach(v => {
+                if (v.paused) { v.play(); } else { v.pause(); }
+            });
+        };
+    })();
+
     // 1. Skip logic
     const TARGET_MIN = 2500;
     const TARGET_MAX = 3500;
@@ -67,9 +247,19 @@ INJECT_JS = """
         if (!isNaN(numericDelay) && numericDelay >= TARGET_MIN && numericDelay <= TARGET_MAX) {
             const now = Date.now();
             if (now - lastSkipTime > SKIP_COOLDOWN) {
-                console.log(`[Overlay] Skipped ${numericDelay}ms timer.`);
-                lastSkipTime = now;
-                return originalSetTimeout(callback, 0, ...args);
+                let cbCode = '';
+                try {
+                    if (callback) {
+                        cbCode = callback.toString();
+                    }
+                } catch(e) {}
+                
+                // User target: function(){var t=this,n=arguments;return new Promise((function(r,i){var a=e.apply(t,n);function o(e)...
+                if (cbCode.includes("return new Promise") && cbCode.includes("var t=this,n=arguments")) {
+                    console.log(`[Overlay] Skipped TARGET 3000ms timer.`);
+                    lastSkipTime = now;
+                    return originalSetTimeout(callback, 0, ...args);
+                }
             }
         }
         return originalSetTimeout(callback, delay, ...args);
@@ -474,6 +664,214 @@ function setAlignment(alignment) {
     })();
 })();
 
+// 7. BCU Video End Control - 영상 종료 제어 기능
+(function() {
+    // 영상 강제 종료 함수 (재생바를 맨 뒤로 이동 - 기존 방식)
+    window.bcuForceVideoEnd = function() {
+        console.log('[BCU] Force video end triggered (seek to end)');
+        
+        // 1. YouTube iframe 찾기
+        const ytIframe = document.querySelector('iframe[src*="youtube.com"], iframe[src*="youtube-nocookie.com"]');
+        if (ytIframe) {
+            try {
+                ytIframe.contentWindow.postMessage(JSON.stringify({
+                    event: 'command',
+                    func: 'seekTo',
+                    args: [99999, true]
+                }), '*');
+            } catch(e) { console.log('[BCU] postMessage error:', e); }
+        }
+        
+        // 2. Chzzk 클립 iframe 찾기
+        const chzzkIframe = document.getElementById('chzzk_player');
+        if (chzzkIframe) {
+            try {
+                const video = chzzkIframe.contentWindow.document.querySelector('video');
+                if (video) {
+                    video.currentTime = video.duration || 99999;
+                }
+            } catch(e) {}
+        }
+        
+        // 3. 직접 video 요소 찾기
+        document.querySelectorAll('video').forEach(v => {
+            try { v.currentTime = v.duration || 99999; } catch(e) {}
+        });
+    };
+    
+    // 강제 스킵 함수 (4개 API 순차 호출)
+    window.bcuForceSkip = async function() {
+        console.log('[BCU] Force skip triggered (4 API calls)');
+        
+        try {
+            const url = window.location.href;
+            const channelMatch = url.match(/video-donation\\/([^?]+)/);
+            const channelId = channelMatch ? channelMatch[1] : null;
+            const donationId = window._bcuCurrentDonationId;
+            const videoId = window._bcuCurrentVideoId || 'unknown';
+            const payAmount = window._bcuCurrentPayAmount || 0;
+            const videoType = window._bcuCurrentVideoType || 'YOUTUBE';
+            
+            if (!channelId || !donationId) {
+                console.log('[BCU] No channelId or donationId found. channelId:', channelId, 'donationId:', donationId);
+                return;
+            }
+            
+            const neloHeaders = {
+                'Accept': 'application/json, text/plain, */*',
+                'Content-Type': 'application/json',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'cross-site'
+            };
+            
+            const neloBaseBody = {
+                projectName: 'P519917_glive-fe-pc',
+                projectVersion: '0.0.1',
+                txtToken: '4d82d7d6ac304ac39a05387c9ad5d807',
+                userAgent: navigator.userAgent.toLowerCase()
+            };
+            
+            // 1. VIDEO_DONATION_STOPPED
+            console.log('[BCU] Sending 1/4: VIDEO_DONATION_STOPPED');
+            await fetch('https://kr-col-ext.nelo.navercorp.com/_store', {
+                method: 'POST',
+                headers: neloHeaders,
+                referrer: url,
+                referrerPolicy: 'unsafe-url',
+                body: JSON.stringify({
+                    ...neloBaseBody,
+                    logLevel: 'DEBUG',
+                    body: `VIDEO_DONATION_STOPPED channelId: ${channelId}, donationId: ${donationId}, videoId: ${videoId}, videoType: ${videoType}, playMode: VIDEO_PLAY, tierNo: undefined, payAmount: ${payAmount}, donationId: ${donationId}`
+                }),
+                mode: 'cors',
+                credentials: 'omit'
+            }).then(r => r.json()).then(d => console.log('[BCU] 1/4 response:', d)).catch(e => console.log('[BCU] 1/4 error:', e));
+            
+            // 2. VIDEO_DONATION_VIDEO_PLAYBACK_ENDED
+            console.log('[BCU] Sending 2/4: VIDEO_DONATION_VIDEO_PLAYBACK_ENDED');
+            await fetch('https://kr-col-ext.nelo.navercorp.com/_store', {
+                method: 'POST',
+                headers: neloHeaders,
+                referrer: url,
+                referrerPolicy: 'unsafe-url',
+                body: JSON.stringify({
+                    ...neloBaseBody,
+                    logLevel: 'DEBUG',
+                    body: `VIDEO_DONATION_VIDEO_PLAYBACK_ENDED channelId: ${channelId}, donationId: ${donationId}, videoId: ${videoId}, videoType: ${videoType}, playMode: VIDEO_PLAY, tierNo: undefined, payAmount: ${payAmount}`
+                }),
+                mode: 'cors',
+                credentials: 'omit'
+            }).then(r => r.json()).then(d => console.log('[BCU] 2/4 response:', d)).catch(e => console.log('[BCU] 2/4 error:', e));
+            
+            // 3. VIDEO_DONATION_VIDEO_END_ACTION
+            console.log('[BCU] Sending 3/4: VIDEO_DONATION_VIDEO_END_ACTION');
+            await fetch('https://kr-col-ext.nelo.navercorp.com/_store', {
+                method: 'POST',
+                headers: neloHeaders,
+                referrer: url,
+                referrerPolicy: 'unsafe-url',
+                body: JSON.stringify({
+                    ...neloBaseBody,
+                    logLevel: 'INFO',
+                    body: `VIDEO_DONATION_VIDEO_END_ACTION channelId: ${channelId}, donationId: ${donationId}, videoId: ${videoId}, videoType: ${videoType}, playMode: VIDEO_PLAY, tierNo: undefined, payAmount: ${payAmount}`
+                }),
+                mode: 'cors',
+                credentials: 'omit'
+            }).then(r => r.json()).then(d => console.log('[BCU] 3/4 response:', d)).catch(e => console.log('[BCU] 3/4 error:', e));
+            
+            // 4. PUT /end API
+            console.log('[BCU] Sending 4/4: PUT /end API');
+            await fetch(`https://api.chzzk.naver.com/manage/v1/video-session/${channelId}/donations/${donationId}/end`, {
+                method: 'PUT',
+                headers: {
+                    'Accept': 'application/json, text/plain, */*',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'If-Modified-Since': 'Mon, 26 Jul 1997 05:00:00 GMT',
+                    'Front-Client-Platform-Type': 'PC',
+                    'Front-Client-Product-Type': 'web',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'same-site'
+                },
+                referrer: url,
+                referrerPolicy: 'unsafe-url',
+                body: null,
+                mode: 'cors',
+                credentials: 'include'
+            }).then(r => r.json()).then(d => console.log('[BCU] 4/4 response:', d)).catch(e => console.log('[BCU] 4/4 error:', e));
+            
+            console.log('[BCU] All 4 API calls completed!');
+            
+        } catch(e) { console.log('[BCU] Force skip API call error:', e); }
+    };
+    
+    // fetch 인터셉터로 donationId, videoId, payAmount 추출
+    (function() {
+        const origFetch = window.fetch;
+        window.fetch = function(url, options) {
+            try {
+                const urlStr = typeof url === 'string' ? url : (url && url.url ? url.url : String(url));
+                
+                // /donations/{donationId}/play 패턴에서 donationId 추출
+                const donationMatch = urlStr.match(/\/donations\/([^\/]+)\/play/);
+                if (donationMatch) {
+                    window._bcuCurrentDonationId = donationMatch[1];
+                    console.log('[BCU] Captured donationId from fetch:', window._bcuCurrentDonationId);
+                }
+                
+                // NELO 로그에서 videoId, payAmount 추출
+                if (urlStr.includes('nelo.navercorp.com') && options && options.body) {
+                    try {
+                        const bodyStr = typeof options.body === 'string' ? options.body : '';
+                        if (bodyStr.includes('VIDEO_DONATION_RECEIVED') || bodyStr.includes('VIDEO_PLAY_MODE_START')) {
+                            const videoIdMatch = bodyStr.match(/videoId:\s*([^,]+)/);
+                            const payAmountMatch = bodyStr.match(/payAmount:\s*(\d+)/);
+                            const donationIdMatch = bodyStr.match(/donationId:\s*([^,]+)/);
+                            const videoTypeMatch = bodyStr.match(/videoType:\s*([^,]+)/);
+                            
+                            if (videoIdMatch) {
+                                window._bcuCurrentVideoId = videoIdMatch[1].trim();
+                                console.log('[BCU] Captured videoId:', window._bcuCurrentVideoId);
+                            }
+                            if (payAmountMatch) {
+                                window._bcuCurrentPayAmount = parseInt(payAmountMatch[1]);
+                                console.log('[BCU] Captured payAmount:', window._bcuCurrentPayAmount);
+                            }
+                            if (donationIdMatch && !window._bcuCurrentDonationId) {
+                                window._bcuCurrentDonationId = donationIdMatch[1].trim();
+                                console.log('[BCU] Captured donationId from NELO:', window._bcuCurrentDonationId);
+                            }
+                            if (videoTypeMatch) {
+                                window._bcuCurrentVideoType = videoTypeMatch[1].trim();
+                                console.log('[BCU] Captured videoType:', window._bcuCurrentVideoType);
+                            }
+                        }
+                    } catch(e) {}
+                }
+            } catch(e) {}
+            return origFetch.apply(this, arguments);
+        };
+    })();
+    
+    // XMLHttpRequest 인터셉터 (백업)
+    (function() {
+        const origOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url) {
+            try {
+                const urlStr = typeof url === 'string' ? url : String(url);
+                const donationMatch = urlStr.match(/\/donations\/([^\/]+)\/play/);
+                if (donationMatch) {
+                    window._bcuCurrentDonationId = donationMatch[1];
+                    console.log('[BCU] Captured donationId from XHR:', window._bcuCurrentDonationId);
+                }
+            } catch(e) {}
+            return origOpen.apply(this, arguments);
+        };
+    })();
+})();
+
 """
 
 
@@ -488,6 +886,10 @@ class SignalBridge(QObject):
     simulate_click_requested = pyqtSignal(int, int)
     simulate_skip_requested = pyqtSignal()
     simulate_key_requested = pyqtSignal(str)
+    force_connect_requested = pyqtSignal()
+    force_skip_requested = pyqtSignal()
+    seek_to_start_requested = pyqtSignal()
+    toggle_play_pause_requested = pyqtSignal()
     refresh_page_requested = pyqtSignal(str, bool)
     move_window_requested = pyqtSignal(int, int)
     set_taskbar_visible_requested = pyqtSignal(bool)
@@ -743,9 +1145,31 @@ class ChzzkOverlayProcess(QMainWindow):
                 coords_to_click.append((895, 950))
                 coords_to_click.append((895, 950))
         
-        print(f"[Overlay] Simulating Skip - Mode: {'Portrait' if is_port else 'Landscape'}, Align: {align}")
+        print(f"[Overlay] Simulating Skip (Blind Click + Force End) - Mode: {'Portrait' if is_port else 'Landscape'}, Align: {align}")
         for x, y in coords_to_click:
             self.simulate_click(x, y)
+        
+        self.browser.page().runJavaScript("window.bcuForceVideoEnd && window.bcuForceVideoEnd();")
+
+    def force_connect(self):
+        """Trigger force connect (buffer reset)"""
+        print("[Overlay] Force Connect Requested")
+        self.browser.page().runJavaScript("window.bcuForceConnect && window.bcuForceConnect();")
+
+    def force_skip(self):
+        """Trigger force skip (4 API calls)"""
+        print("[Overlay] Force Skip Requested")
+        self.browser.page().runJavaScript("window.bcuForceSkip && window.bcuForceSkip();")
+
+    def seek_to_start(self):
+        """Seek video to start and pause"""
+        print("[Overlay] Seek To Start Requested")
+        self.browser.page().runJavaScript("window.bcuSeekToStart && window.bcuSeekToStart();")
+
+    def toggle_play_pause(self):
+        """Toggle play/pause on video"""
+        print("[Overlay] Toggle Play/Pause Requested")
+        self.browser.page().runJavaScript("window.bcuTogglePlayPause && window.bcuTogglePlayPause();")
 
     def simulate_key(self, key: str):
         """Simulate keyboard key press"""
@@ -996,6 +1420,14 @@ class IPCServer:
             self.signal_bridge.simulate_skip_requested.emit()
         elif cmd == CommandType.SIMULATE_KEY.value:
             self.signal_bridge.simulate_key_requested.emit(data.get("key", ""))
+        elif cmd == CommandType.FORCE_CONNECT.value:
+            self.signal_bridge.force_connect_requested.emit()
+        elif cmd == CommandType.FORCE_SKIP.value:
+            self.signal_bridge.force_skip_requested.emit()
+        elif cmd == CommandType.SEEK_TO_START.value:
+            self.signal_bridge.seek_to_start_requested.emit()
+        elif cmd == CommandType.TOGGLE_PLAY_PAUSE.value:
+            self.signal_bridge.toggle_play_pause_requested.emit()
         elif cmd == CommandType.REFRESH_PAGE.value:
             self.signal_bridge.refresh_page_requested.emit(data.get("url", ""), data.get("is_ui", False))
         elif cmd == CommandType.MOVE_WINDOW.value:
@@ -1102,6 +1534,10 @@ def main():
     signal_bridge.simulate_click_requested.connect(overlay.simulate_click)
     signal_bridge.simulate_skip_requested.connect(overlay.simulate_skip)
     signal_bridge.simulate_key_requested.connect(overlay.simulate_key)
+    signal_bridge.force_connect_requested.connect(overlay.force_connect)
+    signal_bridge.force_skip_requested.connect(overlay.force_skip)
+    signal_bridge.seek_to_start_requested.connect(overlay.seek_to_start)
+    signal_bridge.toggle_play_pause_requested.connect(overlay.toggle_play_pause)
     signal_bridge.refresh_page_requested.connect(overlay.refresh_page)
     signal_bridge.move_window_requested.connect(overlay.move_to)
     signal_bridge.set_taskbar_visible_requested.connect(overlay.set_taskbar_visible)

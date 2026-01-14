@@ -162,6 +162,14 @@ class OverlayPreviewWindow(QWidget):
         self.home_button.clicked.connect(lambda: self.video_donation_tab.video_control('home'))
         buttons_layout.addWidget(self.home_button, 0, 2)
 
+        self.force_connect_button = QPushButton(" 강제연결", self)
+        # self.force_connect_button.setIcon(QIcon(resource_path(r'.\resources\icon\rotate-white.png'))) # Use appropriate icon if available, or just text
+        self.force_connect_button.setMinimumWidth(80)
+        self.force_connect_button.setStyleSheet(button_style)
+        self.force_connect_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.force_connect_button.clicked.connect(lambda: self.video_donation_tab.video_control('connect'))
+        buttons_layout.addWidget(self.force_connect_button, 0, 3)
+
         self.reserve_button = QPushButton(" 정지 예약", self)
         self.reserve_button.setCheckable(True)
         self.reserve_button.setIcon(QIcon(resource_path(r'.\resources\icon\pause-white.png')))
@@ -190,6 +198,13 @@ class OverlayPreviewWindow(QWidget):
         self.refresh_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.refresh_button.clicked.connect(lambda: self.video_donation_tab.refresh_page())
         buttons_layout.addWidget(self.refresh_button, 1, 2)
+
+        self.force_skip_button = QPushButton(" 강제스킵", self)
+        self.force_skip_button.setMinimumWidth(80)
+        self.force_skip_button.setStyleSheet(button_style)
+        self.force_skip_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.force_skip_button.clicked.connect(lambda: self.video_donation_tab.video_control('force_skip'))
+        buttons_layout.addWidget(self.force_skip_button, 1, 3)
 
         controls_layout.addLayout(buttons_layout)
 

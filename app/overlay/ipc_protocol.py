@@ -30,6 +30,10 @@ class CommandType(Enum):
     SIMULATE_CLICK = "simulate_click"
     SIMULATE_SKIP = "simulate_skip"
     SIMULATE_KEY = "simulate_key"
+    FORCE_CONNECT = "force_connect"
+    FORCE_SKIP = "force_skip"
+    SEEK_TO_START = "seek_to_start"
+    TOGGLE_PLAY_PAUSE = "toggle_play_pause"
     REFRESH_PAGE = "refresh_page"
     MOVE_WINDOW = "move_window"
     SET_TASKBAR_VISIBLE = "set_taskbar_visible"
@@ -114,6 +118,18 @@ def cmd_refresh_page(url: str, is_ui: bool) -> IPCMessage:
 
 def cmd_simulate_key(key: str) -> IPCMessage:
     return IPCMessage(CommandType.SIMULATE_KEY.value, {"key": key})
+
+def cmd_force_connect() -> IPCMessage:
+    return IPCMessage(CommandType.FORCE_CONNECT.value)
+
+def cmd_force_skip() -> IPCMessage:
+    return IPCMessage(CommandType.FORCE_SKIP.value)
+
+def cmd_seek_to_start() -> IPCMessage:
+    return IPCMessage(CommandType.SEEK_TO_START.value)
+
+def cmd_toggle_play_pause() -> IPCMessage:
+    return IPCMessage(CommandType.TOGGLE_PLAY_PAUSE.value)
 
 def cmd_close() -> IPCMessage:
     return IPCMessage(CommandType.CLOSE.value)

@@ -20,8 +20,8 @@ from PyQt6.QtGui import QImage, QPixmap
 from app.overlay.ipc_protocol import (
     IPC_PORT, SHARED_MEMORY_NAME, FRAME_WIDTH, FRAME_HEIGHT, FRAME_CHANNELS, FRAME_SIZE,
     CommandType, EventType, IPCMessage,
-    cmd_set_volume, cmd_set_orientation, cmd_set_alignment,
-    cmd_simulate_click, cmd_simulate_skip, cmd_simulate_key, cmd_refresh_page, 
+    cmd_set_volume, cmd_set_orientation, cmd_set_alignment, cmd_simulate_click, cmd_simulate_skip,
+    cmd_simulate_key, cmd_force_connect, cmd_force_skip, cmd_seek_to_start, cmd_toggle_play_pause, cmd_refresh_page, 
     cmd_move_window, cmd_set_taskbar_visible, cmd_get_position, cmd_close, cmd_ping
 )
 
@@ -256,8 +256,22 @@ class OverlayClient(QObject):
         self._send_command(cmd_simulate_skip())
     
     def simulate_key(self, key: str):
-        """Simulate keyboard key (home, end, space)"""
         self._send_command(cmd_simulate_key(key))
+
+    def force_connect(self):
+        self._send_command(cmd_force_connect())
+
+    def force_skip(self):
+        """Trigger force skip (4 API calls)"""
+        self._send_command(cmd_force_skip())
+
+    def seek_to_start(self):
+        """Seek video to start and pause"""
+        self._send_command(cmd_seek_to_start())
+
+    def toggle_play_pause(self):
+        """Toggle play/pause on video"""
+        self._send_command(cmd_toggle_play_pause())
     
     def refresh_page(self, url: str = "", is_ui: bool = False):
         """Refresh overlay page"""

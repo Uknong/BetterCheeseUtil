@@ -369,19 +369,10 @@ if (!document.querySelector('#sidebarToggle')) {
     display: ${isVideoSupportTabActive() ? 'inline-block' : 'none'};
   `;
   scrollToPlayingButton.addEventListener('click', () => {
-    const items = Array.from(document.querySelectorAll('[class*="remote_control_feed_item"]'));
     const container = document.querySelector('[class*="remote_control_content"]');
-    let targetItem = null;
-
-    for (let i = items.length - 1; i >= 0; i--) {
-      const item = items[i];
-      const targetButton = item.querySelector('button[class*="remote_control_feed_button"]');
-      const targetButtonText = targetButton && targetButton.querySelector('.blind') ? targetButton.querySelector('.blind').innerText : '';
-      if (targetButtonText.includes('재생 정지')) {
-        targetItem = item;
-        break;
-      }
-    }
+    // remote_control_feed_active 클래스를 가진 요소 중 가장 상단(첫 번째)의 것을 찾음
+    const activeItems = Array.from(document.querySelectorAll('[class*="remote_control_feed_item"][class*="remote_control_feed_active"]'));
+    let targetItem = activeItems.length > 0 ? activeItems[0] : null;
 
     if (targetItem && container) {
       const itemRect = targetItem.getBoundingClientRect();

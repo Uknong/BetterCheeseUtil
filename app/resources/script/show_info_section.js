@@ -161,4 +161,48 @@
 
     // console.log('✅ (v12) 레이아웃 재구성 및 너비 제한 해제 완료.');
 
+    // --- 9. webplayer-internal-video 자동 정지 (리소스 절약) ---
+    const pauseInternalVideo = (video) => {
+        if (video && !video.paused) {
+            video.pause();
+            // console.log('✅ webplayer-internal-video 자동 정지됨');
+        }
+    };
+
+    const setupVideoAutoPause = (video) => {
+        if (!video || video.dataset.autoPauseSet) return;
+        video.dataset.autoPauseSet = 'true';
+
+        // 이미 재생 중이면 즉시 정지
+        pauseInternalVideo(video);
+
+        // play 이벤트 발생 시 정지
+        video.addEventListener('play', () => {
+            video.pause();
+            // console.log('✅ webplayer-internal-video 재생 시도 감지 → 자동 정지');
+        });
+    };
+
+    // 현재 존재하는 비디오 처리
+    const existingVideos = document.querySelectorAll('.webplayer-internal-video');
+    existingVideos.forEach(setupVideoAutoPause);
+
+    // 동적으로 추가되는 비디오 감지 (MutationObserver)
+    const videoObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    if (node.classList && node.classList.contains('webplayer-internal-video')) {
+                        setupVideoAutoPause(node);
+                    }
+                    // 자식 요소 중에서도 찾기
+                    const childVideos = node.querySelectorAll ? node.querySelectorAll('.webplayer-internal-video') : [];
+                    childVideos.forEach(setupVideoAutoPause);
+                }
+            }
+        }
+    });
+
+    videoObserver.observe(document.body, { childList: true, subtree: true });
+
 })();
