@@ -121,7 +121,7 @@
 [다운로드](https://github.com/hamsterb0t/BetterCheeseUtil/releases/latest)
 
 ## 빌드
-[빌드 방법](https://github.com/hamsterb0t/BetterCheeseUtil/blob/main/md/Compile_Tutorial.md)
+[빌드 방법](https://github.com/hamsterb0t/BetterCheeseUtil/blob/main/md/Build_Tutorial.md)
 
 ## Credits
 * [치지직 스트리머 케인](https://chzzk.naver.com/7b1acb37b35928ff690d011296a9e5ab) - 개발에 있어 많은 피드백과 도움을 주셨습니다.
