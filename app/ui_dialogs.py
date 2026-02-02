@@ -14,13 +14,582 @@ from PyQt6.QtCore import Qt, QSettings, QUrl, QTimer, pyqtSignal, QSize, QEvent,
 
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineScript, QWebEnginePage, QWebEngineSettings
+from PyQt6.QtCore import QSizeF
 
 
 from app.resources import resource_path
 from app.constants import USERPATH, VERSION, BUILDNUMBER
 from app.ui_widgets import QToggle
+from PyQt6.QtWidgets import QSlider, QGridLayout
+
+
+# OverlayPreviewDialog Removed as requested
+
+
+
+class OverlayPreviewWidget(QWidget):
+    """가로/세로 화면 박스를 그리는 위젯 - 실제 오버레이처럼 겹쳐서 표시"""
+    def __init__(self, portrait_width: int, portrait_height: int, alignment: str = "center", parent=None):
+        super().__init__(parent)
+        self.portrait_width = portrait_width
+        self.portrait_height = portrait_height
+        self.alignment = alignment
+        
+        # 실제 크기 표시 (scale = 1.0)
+        self.scale = 1.0
+        # 오프셋 없이 0,0 부터 시작
+        offset_x, offset_y = 0, 0
+        
+        # 9-Grid Alignment Parsing
+        # alignment string format: "top-left", "center-center", "bottom-right", etc.
+        # Fallback for legacy "left", "center", "right" -> "top-left", "top-center", "top-right"
+        
+        self.h_align = "center"
+        self.v_align = "top"
+        
+        if "-" in self.alignment:
+            parts = self.alignment.split("-")
+            if len(parts) >= 2:
+                self.v_align = parts[0] # top, center, bottom
+                self.h_align = parts[1] # left, center, right
+        else:
+            # Legacy Single Value
+            if self.alignment in ["left", "center", "right"]:
+                self.v_align = "top" 
+                self.h_align = self.alignment
+            elif self.alignment == "top": self.v_align="top"; self.h_align="center"
+            elif self.alignment == "bottom": self.v_align="bottom"; self.h_align="center"
+        # 고정 크기 (설정창 내부용)
+        self.setFixedSize(300, 560)  # 적절한 비율 유지를 위한 크기
+
+        
+    def sizeHint(self):
+         return QSize(300, 560) 
+    
+    def update_portrait_size(self, width: int, height: int):
+        self.portrait_width = width
+        self.portrait_height = height
+        self.update()  # 다시 그리기
+    
+    def update_alignment(self, alignment: str):
+        self.alignment = alignment
+        
+        # Update internal h_align, v_align
+        if "-" in self.alignment:
+            parts = self.alignment.split("-")
+            if len(parts) >= 2:
+                self.v_align = parts[0]
+                self.h_align = parts[1]
+        else:
+            if self.alignment in ["left", "center", "right"]:
+                self.v_align = "top"
+                self.h_align = self.alignment
+            elif self.alignment == "top": self.v_align="top"; self.h_align="center"
+            elif self.alignment == "bottom": self.v_align="bottom"; self.h_align="center"
+        
+        self.update()
+    
+    def update_portrait_size(self, width, height):
+        self.portrait_width = width
+        self.portrait_height = height
+        self.update()
+
+    def paintEvent(self, event):
+        from PyQt6.QtGui import QPainter, QPen, QBrush, QFont as QGuiFont
+        
+        # 1. 기본 치수 계산
+        h_video_h = 720
+        h_text_h = 162
+        h_total_h = h_video_h + h_text_h  # 882
+        
+        include_text = getattr(self, 'include_text', True)
+        h_content_h = h_total_h if include_text else h_video_h
+        
+        p_video_w = self.portrait_width
+        p_video_h = self.portrait_height
+        p_text_h = 162
+        p_total_h = p_video_h + p_text_h
+        
+        # 전체 캔버스 높이 (둘 중 큰 값)
+        max_h = max(h_total_h, p_total_h)
+        
+        # 2. 스케일 계산
+        VIRTUAL_WIDTH = 1280
+        VIRTUAL_HEIGHT = max_h # 전체 높이를 max_h로 맞춤
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        widget_w = self.width()
+        widget_h = self.height()
+        
+        scale_x = widget_w / VIRTUAL_WIDTH
+        scale_y = widget_h / VIRTUAL_HEIGHT
+        scale = min(scale_x, scale_y)
+        
+        drawn_w = VIRTUAL_WIDTH * scale
+        drawn_h = VIRTUAL_HEIGHT * scale
+        offset_x = (widget_w - drawn_w) / 2
+        offset_y = (widget_h - drawn_h) / 2
+        
+        painter.translate(offset_x, offset_y)
+        painter.scale(scale, scale)
+        
+        # 3. 배경 그리기
+        win_h = max_h
+        
+        # 전체 영역 (검은색)
+        painter.fillRect(0, 0, 1280, win_h, QColor(20, 20, 20))
+        painter.setPen(QPen(QColor(60, 60, 60), 2))
+        painter.drawRect(0, 0, 1280, win_h)
+        
+        # 3. 가로 모드 영역 (빨간 점선) - 9분할 정렬 기준 (Clean Implementation)
+        h_video_h = 720
+        h_text_h = 162
+        h_total_h = h_video_h + h_text_h  # 882
+        
+        include_text = getattr(self, 'include_text', True)
+        h_content_h = h_total_h if include_text else h_video_h
+        
+        p_video_h = self.portrait_height
+        p_text_h = 162
+        p_total_h = p_video_h + p_text_h
+        
+        # 전체 캔버스 높이 (둘 중 큰 값)
+        max_h = max(h_total_h, p_total_h)
+        
+        # 윈도우 높이 설정
+        win_h = max_h 
+
+        # Horizontal Align for Landscape (가로화면 Y 위치)
+        if self.h_align == "left":
+            h_x = 0
+        elif self.h_align == "right":
+            h_x = 0
+        else:
+            h_x = 0
+        
+        # Vertical Align for Landscape
+        if self.v_align == "top":
+            h_y = 0
+        elif self.v_align == "bottom":
+            h_y = win_h - h_total_h
+        else:  # center
+            if include_text:
+                h_y = (win_h - h_total_h) // 2
+            else:
+                h_y = (win_h - h_video_h) // 2
+        
+        red_pen = QPen(QColor(255, 80, 80), 4)
+        red_pen.setDashPattern([10, 10])
+        painter.setPen(red_pen)
+        painter.setBrush(QBrush(QColor(80, 0, 0, 80)))
+        
+        painter.drawRect(h_x, int(h_y), 1280, h_video_h)
+        painter.drawRect(h_x, int(h_y) + h_video_h, 1280, h_text_h)
+        
+        # 5. 세로화면(Blue) 위치 계산 - 항상 Y=0 고정!
+        # 세로화면(portrait)은 창 상단에 고정. v_align은 가로화면에만 적용됨.
+        if self.h_align == "left":
+            p_x = 0
+        elif self.h_align == "right":
+            p_x = 1280 - (getattr(self, 'portrait_width', 576))
+        else: # center
+            p_x = (1280 - (getattr(self, 'portrait_width', 576))) // 2
+        
+        # Portrait Y position is ALWAYS 0 (top of window)
+        p_y = 0
+        
+        blue_pen = QPen(QColor(80, 80, 255), 4)
+        blue_pen.setDashPattern([10, 10])
+        painter.setPen(blue_pen)
+        painter.setBrush(QBrush(QColor(0, 0, 80, 100)))
+        
+        painter.drawRect(int(p_x), int(p_y), getattr(self, 'portrait_width', 576), p_video_h)
+        painter.drawRect(int(p_x), int(p_y) + p_video_h, getattr(self, 'portrait_width', 576), p_text_h)
+        
+        # 6. 텍스트 정보
+        painter.setPen(QColor(255, 255, 255))
+        font = QGuiFont("맑은 고딕", 80, QGuiFont.Weight.Bold)
+        painter.setFont(font)
+        
+        info_text = f"전체: 1280x{win_h}"
+        painter.drawText(20, win_h - 20, info_text)
+        
+        painter.end()
+
+
+class OverlaySettingsDialog(QDialog):
+    """설정 팝업 - 슬라이더와 치수 표"""
+    settings_changed = pyqtSignal(int, int)  # portrait_width, portrait_height 변경 시그널
+    align_changed = pyqtSignal(str) # 정렬 변경 시그널 추가
+    include_text_changed = pyqtSignal(bool)  # 후원텍스트 포함 정렬 변경 시그널
+    
+    def __init__(self, portrait_width: int, portrait_height: int, main_window, parent=None):
+        super().__init__(parent)
+        self.portrait_width = portrait_width
+        self.portrait_height = portrait_height
+        self.original_width = portrait_width  # 원래 값 저장 (취소 시 복원용)
+        self.original_height = portrait_height
+        self.main_window = main_window
+        self.preview_dialog = None
+        self._closing = False
+        
+        self.setWindowTitle("영상 정렬/크기 설정")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setWindowIcon(QIcon(resource_path(r'.\resources\icon\icon_BCU.ico')))
+        
+        self.initUI()
+        
+    def update_alignment(self, alignment):
+        self.alignment = alignment # Update internal alignment
+        self.preview_widget.update_alignment(alignment)
+        # 9-grid 버튼 상태 업데이트
+        self.update_button_states(alignment) # 새로 추가된 메서드 호출
+    
+    def update_button_states(self, current_alignment):
+        for align_name, btn in self.align_buttons.items():
+            btn.setChecked(align_name == current_alignment)
+    
+    def initUI(self):
+        # Main Layout: Horizontal (Left: Controls, Right: Preview)
+        main_layout = QHBoxLayout(self)
+        
+        # --- Left: Controls ---
+        controls_widget = QWidget()
+        controls_layout = QVBoxLayout(controls_widget)
+        controls_layout.setContentsMargins(0, 0, 0, 0) # Remove margins for the controls widget
+        
+        # 1. Height Slider
+        controls_layout.addWidget(QLabel("세로화면 높이 조절"))
+        
+        h_layout = QHBoxLayout()
+        self.height_slider = QSlider(Qt.Orientation.Horizontal)
+        self.height_slider.setRange(576, 2276)
+        self.height_slider.setValue(self.portrait_height)
+        self.height_slider.valueChanged.connect(self.on_height_slider_changed)
+        h_layout.addWidget(self.height_slider)
+        
+        self.height_spinbox = QSpinBox()
+        self.height_spinbox.setRange(576, 2276)
+        self.height_spinbox.setValue(self.portrait_height)
+        self.height_spinbox.setSuffix(" px")
+        self.height_spinbox.valueChanged.connect(self.on_height_spinbox_changed)
+        h_layout.addWidget(self.height_spinbox)
+        
+        controls_layout.addLayout(h_layout)
+        
+        # 2. Width Slider
+        controls_layout.addWidget(QLabel("세로화면 너비 조절"))
+        
+        w_layout = QHBoxLayout()
+        self.width_slider = QSlider(Qt.Orientation.Horizontal)
+        self.width_slider.setRange(300, 1280)
+        self.width_slider.setValue(self.portrait_width)
+        self.width_slider.valueChanged.connect(self.on_width_slider_changed)
+        w_layout.addWidget(self.width_slider)
+        
+        self.width_spinbox = QSpinBox()
+        self.width_spinbox.setRange(300, 1280)
+        self.width_spinbox.setValue(self.portrait_width)
+        self.width_spinbox.setSuffix(" px")
+        self.width_spinbox.valueChanged.connect(self.on_width_spinbox_changed)
+        w_layout.addWidget(self.width_spinbox)
+        
+        controls_layout.addLayout(w_layout)
+
+        controls_layout.addSpacing(20)
+
+        # 3. 9-Grid Alignment Buttons
+        controls_layout.addWidget(QLabel("정렬 설정"))
+        
+        grid_container = QWidget()
+        grid_layout = QGridLayout(grid_container)
+        grid_layout.setSpacing(5)
+        
+        self.align_buttons = {}
+        alignments = [
+            ("top-left", 0, 0), ("top-center", 0, 1), ("top-right", 0, 2),
+            ("center-left", 1, 0), ("center-center", 1, 1), ("center-right", 1, 2),
+            ("bottom-left", 2, 0), ("bottom-center", 2, 1), ("bottom-right", 2, 2)
+        ]
+        
+        for name, r, c in alignments:
+            btn = QPushButton()
+            btn.setFixedSize(50, 50)
+            btn.setCheckable(True)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 키보드 포커스 제거
+            # Unicode arrows or text can be used
+            labels = {
+                "top-left": "↖", "top-center": "↑", "top-right": "↗",
+                "center-left": "←", "center-center": "•", "center-right": "→",
+                "bottom-left": "↙", "bottom-center": "↓", "bottom-right": "↘"
+            }
+            btn.setText(labels.get(name, ""))
+            btn.setProperty("align_value", name)
+            # Use lambda to capture name
+            btn.clicked.connect(lambda checked, n=name: self.on_align_btn_clicked(n))
+            grid_layout.addWidget(btn, r, c)
+            self.align_buttons[name] = btn
+            
+        controls_layout.addWidget(grid_container, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        # 3.5. Include Text Checkbox
+        self.include_text_checkbox = QCheckBox("후원 텍스트 포함 정렬")
+        self.include_text_checkbox.setChecked(True)  # 기본값: 체크됨 (영상+텍스트 기준)
+        self.include_text_checkbox.toggled.connect(self.on_include_text_changed)
+        controls_layout.addWidget(self.include_text_checkbox)
+        
+        controls_layout.addStretch()
+
+        # 4. Dimension Info
+        controls_layout.addSpacing(10)
+        table_label = QLabel("치수 정보")
+        table_label.setStyleSheet("font-weight: bold;")
+        controls_layout.addWidget(table_label)
+        
+        grid = QGridLayout()
+        grid.setSpacing(12)
+        grid.setColumnMinimumWidth(0, 140)  # 가로화면 열
+        grid.setColumnMinimumWidth(1, 140)  # 세로화면 열
+        
+        # 헤더
+        grid.addWidget(QLabel("<b>가로화면</b>"), 0, 0)
+        grid.addWidget(QLabel("<b>세로화면</b>"), 0, 1)
+        
+        # 영상
+        grid.addWidget(QLabel("영상:"), 1, 0)
+        self.h_video_label = QLabel("[1280] x [720]")
+        grid.addWidget(self.h_video_label, 1, 0, Qt.AlignmentFlag.AlignRight)
+        
+        grid.addWidget(QLabel("영상:"), 1, 1)
+        self.p_video_label = QLabel(f"[{self.portrait_width}] x [{int(self.portrait_width * 1024 / 576)}]")
+        grid.addWidget(self.p_video_label, 1, 1, Qt.AlignmentFlag.AlignRight)
+        
+        # 후원텍스트
+        grid.addWidget(QLabel("후원알림:"), 2, 0)
+        self.h_text_label = QLabel("[1280] x [162]")
+        grid.addWidget(self.h_text_label, 2, 0, Qt.AlignmentFlag.AlignRight)
+        
+        grid.addWidget(QLabel("후원알림:"), 2, 1)
+        self.p_text_label = QLabel(f"[{self.portrait_width}] x [162]")
+        grid.addWidget(self.p_text_label, 2, 1, Qt.AlignmentFlag.AlignRight)
+        
+        # 전체 창 크기
+        p_total_h = int(self.portrait_width * 1024 / 576) + 162
+        
+        grid.addWidget(QLabel("전체:"), 3, 0)
+        self.h_total_label = QLabel("[1280] x [882]")
+        grid.addWidget(self.h_total_label, 3, 0, Qt.AlignmentFlag.AlignRight)
+        
+        grid.addWidget(QLabel("전체:"), 3, 1)
+        self.p_total_label = QLabel(f"[{self.portrait_width}] x [{p_total_h}]")
+        grid.addWidget(self.p_total_label, 3, 1, Qt.AlignmentFlag.AlignRight)
+        
+        controls_layout.addLayout(grid)
+        
+        # 버튼
+        controls_layout.addSpacing(15)
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        self.ok_button = QPushButton("확인")
+        self.ok_button.clicked.connect(self.on_ok_clicked)
+        button_layout.addWidget(self.ok_button)
+        
+        controls_layout.addLayout(button_layout)
+        
+        controls_widget.setFixedWidth(350) # Controls Width
+        
+        # Add Left Panel to Main Layout
+        main_layout.addWidget(controls_widget)
+        
+        # Right Panel (Preview)
+        # 정렬 정보가 필요하므로 SettingsTab에서 주입받아야 하지만, 
+        # 여기서는 기본값 'center'로 시작하고 외부에서 update_alignment로 갱신
+        self.preview_widget = OverlayPreviewWidget(self.portrait_width, self.portrait_height, "center-center")
+        main_layout.addWidget(self.preview_widget)
+
+    
+    def on_width_slider_changed(self, value):
+        self.width_spinbox.blockSignals(True)
+        self.width_spinbox.setValue(value)
+        self.width_spinbox.blockSignals(False)
+        
+        # 9:16 비율 강제 (너비 기준)
+        height = int(value * 16 / 9)
+        self.update_height_widgets(height)
+        
+        self.portrait_width = value
+        self.portrait_height = height
+        self.update_dimensions()
+    
+    def on_width_spinbox_changed(self, value):
+        self.width_slider.blockSignals(True)
+        self.width_slider.setValue(value)
+        self.width_slider.blockSignals(False)
+        
+        # 9:16 비율 강제 (너비 기준)
+        height = int(value * 16 / 9)
+        self.update_height_widgets(height)
+
+        self.portrait_width = value
+        self.portrait_height = height
+        self.update_dimensions()
+    
+    def on_height_slider_changed(self, value):
+        self.height_spinbox.blockSignals(True)
+        self.height_spinbox.setValue(value)
+        self.height_spinbox.blockSignals(False)
+        
+        # 9:16 비율 강제 (높이 기준)
+        width = int(value * 9 / 16)
+        self.update_width_widgets(width)
+
+        self.portrait_height = value
+        self.portrait_width = width
+        self.update_dimensions()
+    
+    def on_height_spinbox_changed(self, value):
+        self.height_slider.blockSignals(True)
+        self.height_slider.setValue(value)
+        self.height_slider.blockSignals(False)
+        
+        # 9:16 비율 강제 (높이 기준)
+        width = int(value * 9 / 16)
+        self.update_width_widgets(width)
+
+        self.portrait_height = value
+        self.portrait_width = width
+        self.update_dimensions()
+
+    def update_height_widgets(self, height):
+        self.height_slider.blockSignals(True)
+        self.height_spinbox.blockSignals(True)
+        self.height_slider.setValue(height)
+        self.height_spinbox.setValue(height)
+        self.height_slider.blockSignals(False)
+        self.height_spinbox.blockSignals(False)
+
+    def update_width_widgets(self, width):
+        self.width_slider.blockSignals(True)
+        self.width_spinbox.blockSignals(True)
+        self.width_slider.setValue(width)
+        self.width_spinbox.setValue(width)
+        self.width_slider.blockSignals(False)
+        self.width_spinbox.blockSignals(False)
+    
+    def update_dimensions(self):
+        width = self.portrait_width
+        height = self.portrait_height
+        p_total_h = height + 162
+        
+        self.p_video_label.setText(f"[{width}] x [{height}]")
+        self.p_text_label.setText(f"[{width}] x [162]")
+        self.p_total_label.setText(f"[{width}] x [{p_total_h}]")
+        
+        # 전체 창 크기 레이블 업데이트
+        total_h = max(882, p_total_h)
+        if hasattr(self, 'h_total_label'):
+             self.h_total_label.setText(f"[1280] x [{total_h}]")
+
+        # 미리보기 업데이트
+        # 미리보기 위젯 업데이트
+        if hasattr(self, 'preview_widget'):
+            self.preview_widget.update_portrait_size(width, height)
+        
+        self.settings_changed.emit(width, height)
+    
+    def on_ok_clicked(self):
+        # 확인 버튼 클릭 시 저장하고 닫기 (묻지 않음)
+        self.save_and_close()
+    
+    def on_cancel_clicked(self):
+        self._closing = True
+        self.close()
+    
+    def save_and_close(self):
+        # 메인 윈도우에 값 저장
+        if self.main_window and hasattr(self.main_window, 'settings_tab'):
+            self.main_window.settings_tab.overlay_portrait_width = self.portrait_width
+            self.main_window.settings_tab.overlay_portrait_height = self.portrait_height
+        self._closing = True
+        self.close()
+    
+    def closeEvent(self, event):
+        # 자동 저장 (상시 저장됨)이므로 별도 확인 없이 닫음
+        # 미리보기도 닫기 (존재한다면)
+        if self.preview_dialog and hasattr(self.preview_dialog, 'close'):
+             try:
+                 self.preview_dialog.close()
+             except:
+                 pass
+        
+        event.accept()
+
+
+
+    def on_align_btn_clicked(self, align_value):
+        # UI 업데이트
+        self.update_button_states(align_value)
+        # 미리보기 업데이트
+        self.preview_widget.update_alignment(align_value)
+        
+        # 메인 윈도우/설정에 즉시 반영되어야 함
+        # 기존 settings_changed 시그널은 size만 전달하므로, 
+        # 이를 확장하거나(settings_tab에서 처리) 별도 시그널/콜백이 필요
+        # 간단히 settings_tab에서 이 다이얼로그의 align_buttons 상태를 읽거나,
+        # 여기서 직접 parent/callback 호출
+        
+        # 가장 깔끔한 방법: settings_tab에서 connect한 콜백을 호출하거나 새 시그널 emit
+        # 여기서는 settings_tab.py의 on_size_changed 같은 로직이 필요함.
+        # settings_changed 시그널은 (w, h)만 보냄.
+        # align_changed 시그널 추가
+        self.align_changed.emit(align_value)
+
+    def update_button_states(self, current_align: str):
+        # Legacy fallback
+        if current_align in ["left", "center", "right"]:
+            current_align = f"top-{current_align}"
+        if current_align == "top": current_align = "top-center"
+        if current_align == "bottom": current_align = "bottom-center"
+            
+        for name, btn in self.align_buttons.items():
+            is_active = (name == current_align)
+            btn.setChecked(is_active)
+            if is_active:
+                btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+            else:
+                btn.setStyleSheet("")
+    
+    def on_include_text_changed(self, checked):
+        """후원텍스트 포함 정렬 옵션 변경 시"""
+        # 미리보기 위젯에 include_text 값 전달
+        self.preview_widget.include_text = checked
+        self.preview_widget.update()
+        
+        # 설정 변경 시그널 발송 (오버레이에 변경 적용)
+        w = self.width_slider.value()
+        h = self.height_slider.value()
+        self.settings_changed.emit(w, h)
+        
+        # include_text 변경 시그널 발송 (오버레이에 직접 전달)
+        self.include_text_changed.emit(checked)
+        
+        # 정렬 시그널도 발송하여 위치 업데이트 (include_text 변경은 위치에 영향)
+        # 현재 선택된 정렬값 찾기
+        current_align = None
+        for name, btn in self.align_buttons.items():
+            if btn.isChecked():
+                current_align = name
+                break
+        if current_align:
+            self.align_changed.emit(current_align)
+
 
 class TabManagementDialog(QDialog):
+    """탭 관리 다이얼로그"""
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
@@ -685,30 +1254,40 @@ INJECT_JS = """
     const SKIP_COOLDOWN = 500;
     let lastSkipTime = 0;
     const originalSetTimeout = window.setTimeout;
+    
+    // Default enabled
+    window.bcu_skip_timer_enabled = true;
 
     if (window.top === window.self) console.log('[Overlay] Script Loaded. Overwriting setTimeout...');
 
     window.setTimeout = function(callback, delay, ...args) {
-        const numericDelay = parseInt(delay, 10);
-        if (!isNaN(numericDelay) && numericDelay >= TARGET_MIN && numericDelay <= TARGET_MAX) {
-            const now = Date.now();
-            if (now - lastSkipTime > SKIP_COOLDOWN) {
-                let cbCode = '';
-                try {
-                    if (callback) {
-                        cbCode = callback.toString();
+        // Skip logic only if enabled
+        if (window.bcu_skip_timer_enabled) {
+            const numericDelay = parseInt(delay, 10);
+            if (!isNaN(numericDelay) && numericDelay >= TARGET_MIN && numericDelay <= TARGET_MAX) {
+                const now = Date.now();
+                if (now - lastSkipTime > SKIP_COOLDOWN) {
+                    let cbCode = '';
+                    try {
+                        if (callback) {
+                            cbCode = callback.toString();
+                        }
+                    } catch(e) {}
+                    
+                    if (cbCode.includes("return new Promise") && cbCode.includes("var t=this,n=arguments")) {
+                        console.log(`[Overlay] Skipped TARGET 3000ms timer.`);
+                        lastSkipTime = now;
+                        return originalSetTimeout(callback, 0, ...args);
                     }
-                } catch(e) {}
-                
-                // User target: function(){var t=this,n=arguments;return new Promise((function(r,i){var a=e.apply(t,n);function o(e)...
-                if (cbCode.includes("return new Promise") && cbCode.includes("var t=this,n=arguments")) {
-                    console.log(`[Overlay] Skipped TARGET 3000ms timer.`);
-                    lastSkipTime = now;
-                    return originalSetTimeout(callback, 0, ...args);
                 }
             }
         }
         return originalSetTimeout(callback, delay, ...args);
+    };
+    
+    window.setSkipTimerEnabled = function(enabled) {
+        window.bcu_skip_timer_enabled = enabled;
+        console.log('[BCU] Skip Timer Enabled:', enabled);
     };
 
     // 2. 투명 배경 및 커스텀 CSS 강제 적용 - DOM 로드 대기 후 실행
@@ -733,8 +1312,10 @@ INJECT_JS = """
                 [class*="overlay_donation_alarm"] {
                     position: relative !important;
                     width: 1280px;
-                    height: 1254px;
-                    overflow: hidden !important;
+                    /* height: 1254px;  <- Cutoff cause: Fixed height */
+                    height: auto !important; /* Allow dynamic height */
+                    min-height: 100vh;
+                    overflow: visible !important; /* Allow content to flow */
                 }
 
                 [class*="overlay_donation_alarm"] * {
@@ -769,7 +1350,7 @@ INJECT_JS = """
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    gap: 10px;
+                    gap: 0px !important;
                     padding: 10px 30px 20px 30px;
                     overflow: visible !important;
                 }
@@ -819,7 +1400,7 @@ INJECT_JS = """
                     line-height: 50px !important;
                     font-weight: normal !important;
                     color: white !important;
-                    padding: 15px 10px 5px 10px !important;
+                    padding: 0px 10px 5px 10px !important;
                     display: flex !important;
                     justify-content: center !important;
                     align-items: center !important;
@@ -836,6 +1417,13 @@ INJECT_JS = """
 
                 [class*="overlay_donation_money"] {
                     margin-right: 5px !important;
+                }
+
+                [class*="overlay_donation_description"] {
+                    margin-bottom: 5px !important;
+                }
+                [class*="overlay_donation_wrapper"] {
+                    margin-top: 0px !important;
                 }
 
                 /* 세로 모드 (Portrait) */
@@ -882,6 +1470,28 @@ INJECT_JS = """
                    margin: 0 !important;
                    transform: none !important;
                 }
+                
+                /* 세로 정렬 (Vertical Align) - Portrait에서는 적용 안 함! */
+                /* Portrait 모드에서 세로영상은 항상 top:0 고정. */
+                /* v_align은 LANDSCAPE 모드에서만 적용됨. */
+                
+                /* Landscape Mode: Vertical Align Bottom */
+                body:not(.portrait).align-v-bottom iframe,
+                body:not(.portrait).align-v-bottom #chzzk_player {
+                    /* 동적 CSS (setPortraitSize)에서 top 값 설정 */
+                }
+                body:not(.portrait).align-v-bottom [class*="overlay_donation_contents"] {
+                    /* 동적 CSS (setPortraitSize)에서 top 값 설정 */
+                }
+                
+                /* Landscape Mode: Vertical Align Center */
+                body:not(.portrait).align-v-center iframe,
+                body:not(.portrait).align-v-center #chzzk_player {
+                    /* 동적 CSS (setPortraitSize)에서 top 값 설정 */
+                }
+                body:not(.portrait).align-v-center [class*="overlay_donation_contents"] {
+                    /* 동적 CSS (setPortraitSize)에서 top 값 설정 */
+                }
             `;
             document.head.appendChild(style);
             console.log('[Overlay] Custom CSS Injected.');
@@ -905,9 +1515,170 @@ function toggleOrientation(isPortrait) {
     }
 }
 
+// Global storage for portrait dimensions (used by setAlignment to regenerate CSS)
+var _bcuPortraitWidth = 576;
+var _bcuPortraitHeight = 1024;
+var _bcuIncludeText = true;  // 후원텍스트 포함 여부
+var _bcuVerticalAlign = 'center'; // Vertical Alignment State
+
+// 후원텍스트 포함 여부 설정 함수
+function setIncludeText(includeText) {
+    _bcuIncludeText = includeText;
+    console.log('[BCU] Include text set to:', includeText);
+    // CSS 재생성
+    setPortraitSize(_bcuPortraitWidth, _bcuPortraitHeight);
+}
+
 function setAlignment(alignment) {
+    // Remove old alignment classes
     document.body.classList.remove('align-left', 'align-center', 'align-right');
-    document.body.classList.add('align-' + alignment);
+    document.body.classList.remove('align-v-top', 'align-v-center', 'align-v-bottom');
+    
+    // Parse 9-grid alignment (e.g., "top-left", "center-center", "bottom-right")
+    var parts = alignment.split('-');
+    var vAlign = 'top';
+    var hAlign = 'center';
+    
+    if (parts.length >= 2) {
+        vAlign = parts[0];  // top, center, bottom
+        hAlign = parts[1];  // left, center, right
+    } else {
+        // Legacy single value (left, center, right)
+        hAlign = alignment;
+        
+        if (alignment === 'top' || alignment === 'bottom') {
+            vAlign = alignment;
+            hAlign = 'center';
+        }
+    }
+    
+    _bcuVerticalAlign = vAlign; // Store for setPortraitSize logic
+    
+    document.body.classList.add('align-' + hAlign);
+    document.body.classList.add('align-v-' + vAlign);
+    console.log('[BCU] Alignment set to: h=' + hAlign + ', v=' + vAlign);
+    
+    // Regenerate CSS with new alignment (uses cached dimensions)
+    setPortraitSize(_bcuPortraitWidth, _bcuPortraitHeight);
+}
+
+// 세로 모드 크기 설정 함수 (동적 CSS 업데이트)
+function setPortraitSize(width, height) {
+    // height가 제공되지 않으면 기본 비율로 계산
+    if (!height) {
+        height = Math.round(width * 1024 / 576);
+    }
+    
+    // Cache dimensions globally for setAlignment to use
+    _bcuPortraitWidth = width;
+    _bcuPortraitHeight = height;
+    var centerOffset = Math.round((1280 - width) / 2);
+    var rightOffset = 1280 - width;
+    
+    // 가로화면 높이: include_text에 따라 다름
+    // true: 720(영상) + 162(텍스트) = 882
+    // Physical text height (Always 162)
+    var textH = 162;
+    
+    // Alignment text height
+    // Rule: Include Text toggle only active if v=center. Else always Included.
+    var effectiveInclude = _bcuIncludeText;
+    if (_bcuVerticalAlign !== 'center') {
+        effectiveInclude = true; 
+    }
+    var alignTextH = effectiveInclude ? 162 : 0;
+    
+    // Landscape Alignment Height
+    var landscapeAlignH = 720 + alignTextH;
+
+    // Window Size Calculations (Always include text)
+    var landscapePhysicalH = 720 + 162;
+    var portraitPhysicalH = height + 162;
+    
+    // Use Physical Height for Window Size (maxH)
+    var maxH = Math.max(landscapePhysicalH, portraitPhysicalH);
+    
+    // 기존 동적 스타일 제거
+    var existingStyle = document.getElementById('bcu-portrait-size-style');
+    if (existingStyle) existingStyle.remove();
+    
+    // 새 스타일 생성
+    var style = document.createElement('style');
+    style.id = 'bcu-portrait-size-style';
+    style.textContent = `
+        /* Portrait Mode Sizing */
+        body.portrait iframe[src*="youtube.com"],
+        body.portrait iframe[src*="youtube-nocookie.com"],
+        body.portrait iframe[src*="/embed-clip-donation/"],
+        body.portrait iframe#chzzk_player {
+            width: ${width}px !important;
+            height: ${height}px !important;
+        }
+        body.portrait [class*="overlay_donation_contents"] {
+            top: ${height}px !important;
+            width: ${width}px !important;
+        }
+        body.portrait.align-center iframe,
+        body.portrait.align-center #chzzk_player,
+        body.portrait.align-center [class*="overlay_donation_contents"] {
+            left: ${centerOffset}px !important;
+        }
+        body.portrait.align-right iframe,
+        body.portrait.align-right #chzzk_player,
+        body.portrait.align-right [class*="overlay_donation_contents"] {
+            left: ${rightOffset}px !important;
+        }
+        
+        /* Portrait mode: 세로영상은 항상 top:0 고정. v_align 적용 안 함. */
+        
+        /* ========================================= */
+        /* LANDSCAPE MODE - Vertical Alignment      */
+        /* ========================================= */
+        /* Landscape: Video 720 + Text 162 = 882    */
+        /* Window height = maxH                      */
+        /* Bottom: top = maxH - 882                 */
+        /* Center: top = (maxH - 882) / 2           */
+        
+        /* Landscape Mode: Vertical Align Bottom */
+        body:not(.portrait).align-v-bottom iframe,
+        body:not(.portrait).align-v-bottom #chzzk_player {
+            top: ${maxH - landscapeAlignH}px !important;
+        }
+        body:not(.portrait).align-v-bottom [class*="overlay_donation_contents"] {
+            top: ${maxH - landscapeAlignH + 720}px !important;
+        }
+        
+        /* Landscape Mode: Vertical Align Center */
+        body:not(.portrait).align-v-center iframe,
+        body:not(.portrait).align-v-center #chzzk_player {
+            top: ${(maxH - landscapeAlignH) / 2}px !important;
+        }
+        body:not(.portrait).align-v-center [class*="overlay_donation_contents"] {
+            top: ${(maxH - landscapeAlignH) / 2 + 720}px !important;
+        }
+    `;
+    document.head.appendChild(style);
+    console.log('[BCU] Portrait size set to:', width, 'x', height, 'maxH:', maxH);
+}
+
+// 후원알림 텍스트 표시/숨기기 함수
+function setDonationTextVisible(visible) {
+    var existingStyle = document.getElementById('bcu-donation-text-style');
+    if (existingStyle) existingStyle.remove();
+    
+    if (!visible) {
+        var style = document.createElement('style');
+        style.id = 'bcu-donation-text-style';
+        style.textContent = `
+            [class*="overlay_donation_contents"] {
+                display: none !important;
+            }
+        `;
+        document.head.appendChild(style);
+        console.log('[BCU] Donation text hidden');
+    } else {
+        console.log('[BCU] Donation text shown');
+    }
 }
 
 // 3. 비디오 재생 상태 모니터링 (MutationObserver)
@@ -1612,6 +2383,9 @@ class ChzzkOverlay(QMainWindow):
         self.alignment = "center"
         if hasattr(self.parent(), 'main_window'):
              self.alignment = getattr(self.parent().main_window, 'overlay_alignment', "center")
+             self.include_text = getattr(self.parent().main_window, 'overlay_alignment_include_text', True)
+        else:
+             self.include_text = True
 
         self.setFixedSize(1280, 1254)
 
@@ -1654,6 +2428,9 @@ class ChzzkOverlay(QMainWindow):
         
         # JS 주입
         self.inject_script()
+        
+        # 로드 완료 시그널 연결 (초기 설정을 확실히 적용하기 위함)
+        self.browser.loadFinished.connect(self._on_load_finished)
         
         # URL 로드
         if parent:
@@ -1761,11 +2538,58 @@ class ChzzkOverlay(QMainWindow):
         self.alignment = alignment
         self.browser.page().runJavaScript(f"setAlignment('{alignment}');")
 
+    def set_portrait_size(self, width, height=None):
+        """세로 모드 너비와 높이 설정"""
+        self.portrait_width = width
+        if height is None:
+            height = int(width * 1024 / 576)  # 기본 비율
+        self.portrait_height = height
+        
+        # 윈도우 크기 동적 조절 (가로: 1280, 세로: max(landscape_h, portrait_h))
+        # include_text 상태 반영
+        include_text = getattr(self, 'include_text', True)
+        text_h = 162 if include_text else 0 # For compatibility if needed, but we use fixed 200 for window
+        
+        # User Request: Window height must NOT change. Text must ALWAYS be visible.
+        # So we always allocate space for 200px text.
+        const_text_h = 162
+        
+        landscape_h = 720 + const_text_h
+        portrait_h = height + const_text_h
+        total_h = max(landscape_h, portrait_h)
+        
+        self.setFixedSize(1280, total_h)
+        
+        self.browser.page().runJavaScript(f"setPortraitSize({width}, {height});")
+        print(f"[Overlay] Portrait size set to: {width}x{height}, Window resized to 1280x{total_h}, IncludeText: {include_text}")
+
+    def set_skip_timer_enabled(self, enabled: bool):
+        """3000ms 타이머 스킵 활성화/비활성화"""
+        self.browser.page().runJavaScript(f"setSkipTimerEnabled({str(enabled).lower()});")
+        print(f"[Overlay] Skip timer enabled: {enabled}")
+
+    def set_include_text(self, include_text: bool):
+        """후원텍스트 포함 정렬 설정"""
+        self.include_text = include_text
+        self.browser.page().runJavaScript(f"setIncludeText({str(include_text).lower()});")
+        # 크기 재계산 및 윈도우 리사이즈
+        self.set_portrait_size(self.portrait_width, self.portrait_height)
+        print(f"[Overlay] Include text: {include_text}")
+
     def closeEvent(self, event: QCloseEvent):
         self.closed.emit()
         self.browser.stop()
         self.browser.deleteLater()
         event.accept()
+
+    def _on_load_finished(self, ok):
+        if ok:
+            # 설정 재적용 (JS 함수들이 로드된 후 실행 보장)
+            # 타이머를 사용하여 약간의 지연 후 실행 (안전장치)
+            QTimer.singleShot(100, lambda: self.set_alignment(self.alignment))
+            QTimer.singleShot(200, lambda: self.set_portrait_size(getattr(self, 'portrait_width', 576), getattr(self, 'portrait_height', 1024)))
+            QTimer.singleShot(300, lambda: self.set_include_text(getattr(self, 'include_text', True)))
+            print("[Overlay] Page loaded, settings re-applied.")
 
     def inject_script(self):
         script = QWebEngineScript()

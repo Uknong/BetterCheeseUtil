@@ -198,7 +198,7 @@ class ChatroomTab(QWidget):
         print("[ChatroomTab] Injecting AutoPredictionMaster V6 Scraper...")
         
         js_code = """
-        (function autoPredictionMasterV6() {
+        (function autoPredictionMasterV7() {
             // [Duplicate Check - window level]
             if (window.bcu_prediction_scraper_running) {
                 console.log("[BCU] Scraper already running. Skipping.");
@@ -211,26 +211,37 @@ class ChatroomTab(QWidget):
                 triggerBtn: '[class*="live_chatting_fixed_prediction_title__"]',
                 bannerStatus: '[class*="live_chatting_fixed_prediction_status_text__"]',
                 popupContainer: '[class*="live_chatting_popup_prediction_container__"]',
-                popupTitle: 'strong[class*="live_chatting_popup_prediction_title__"]', // [Fixed] Explicitly target strong tag to avoid containers
+                popupTitle: 'strong[class*="live_chatting_popup_prediction_title__"]', 
                 timer: '[class*="live_chatting_popup_prediction_timer__"]',
                 refreshBtn: '[class*="live_chatting_popup_prediction_refresh_button__"]',
                 winnerItem: '[class*="live_chatting_popup_prediction_winner__"]',
                 optionTitle: '[class*="live_chatting_popup_prediction_option_title__"]',
                 optionPercent: '[class*="live_chatting_popup_prediction_percentage__"]',
                 optionItem: '[class*="live_chatting_popup_prediction_option__"]',
-                popupCloseBtn: '[class*="popup_button__"]' // [Added] Close button selector
+                popupCloseBtn: '[class*="popup_button__"]' 
             };
 
             let isWinnerPrinted = false;
-            let previousState = null; // [NEW] Track previous state for transition detection
-            let closedStateRefreshDone = false; // [NEW] Prevent multiple refreshes
-            
+            let previousState = null; 
+            let closedStateRefreshDone = false; 
+            let lastPayloadStr = ""; // [NEW] Change detection
+
             // API Send Helper
             const sendUpdate = (payload) => {
+                const currentStr = JSON.stringify(payload);
+                if (currentStr === lastPayloadStr) return; // Skip duplicates
+
+                lastPayloadStr = currentStr;
+                
+                // Log significant changes
+                if (payload.state === 'CLOSED') {
+                     console.log("[BCU] CLOSED state update detected (Percentages changed).");
+                }
+
                 fetch('http://127.0.0.1:5000/update_prediction_stats', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(payload)
+                    body: currentStr
                 }).catch(err => console.error("Stats update failed:", err));
             };
 
@@ -243,7 +254,7 @@ class ChatroomTab(QWidget):
             };
 
             console.clear();
-            console.log("%c[치지직 승부예측 봇 V6] 가동 시작", "color: #fff; background: #000; font-size: 14px; padding: 4px; font-weight: bold;");
+            console.log("%c[치지직 승부예측 봇 V7] 가동 시작 (변화 감지 모드)", "color: #fff; background: #000; font-size: 14px; padding: 4px; font-weight: bold;");
 
             // 통합 메인 루프 (1초마다 실행)
             setInterval(() => {
@@ -251,10 +262,6 @@ class ChatroomTab(QWidget):
                     const triggerBtn = document.querySelector(SELECTORS.triggerBtn);
                     const popup = document.querySelector(SELECTORS.popupContainer);
                     
-                    // [Result Phase Check] - Moved Logic Down
-                    // const bannerText ... (removed duplicate)
-                    // const isResultPhase ... (removed duplicate)
-
                     // 1. 배너 자체가 없는 경우 (대기)
                     if (!triggerBtn) {
                         isWinnerPrinted = false; 
@@ -269,21 +276,18 @@ class ChatroomTab(QWidget):
                     }
 
                     // 3. 현재 팝업의 데이터 읽기
-                    // [Fixed] Use innerText of the strong tag directly if span is missing, and strip '새로고침'
                     let title = document.querySelector(SELECTORS.popupTitle)?.innerText.trim() || "제목없음";
                     title = title.replace(/새로고침/g, '').trim();
                     
-                    // [Refined] Remove text after '후' (e.g. "35분 21초 후 참여 마감" -> "35분 21초")
                     let timerText = document.querySelector(SELECTORS.timer)?.innerText.replace(/\\n/g, ' ').trim() || "";
                     timerText = timerText.replace(/후.*$/, '').trim();
 
-                    // [Moved UP & Enhanced] Determine Global Winner Name first
+                    // [Winner Check]
                     let globalWinnerName = null;
                     const globalWinnerEl = document.querySelector(SELECTORS.winnerItem);
                     if (globalWinnerEl) {
                         globalWinnerName = globalWinnerEl.querySelector(SELECTORS.optionTitle)?.innerText.trim();
                     } else {
-                        // Fallback: Check for checked input with winner class logic
                         const checkedInput = document.querySelector('input[name="prediction"]:checked');
                         if (checkedInput) {
                             const parentLabel = checkedInput.closest('label');
@@ -294,18 +298,15 @@ class ChatroomTab(QWidget):
                     }
 
                     // [Stale Check Strategy]
-                    // If Banner says 'Result' but no Winner found -> Force Re-open Popup immediately
                     const bannerTextForCheck = document.querySelector(SELECTORS.bannerStatus)?.innerText || "";
                     if ((bannerTextForCheck.includes("결과") || bannerTextForCheck.includes("확인하기")) && !globalWinnerName) {
                         console.log("[BCU] Result Phase but no winner - Forcing Popup Close/Re-open immediately.");
-                        
                         const closeBtn = document.querySelector(SELECTORS.popupContainer)?.childNodes[2]?.childNodes[0];
                         if (closeBtn) closeBtn.click();
-                        else triggerBtn.click(); // Fallback
-                        
-                        return; // Skip this loop, next loop will re-open
+                        else triggerBtn.click(); 
+                        return; 
                     }
-                    // [Result Phase Check] - Check banner text for '결과' OR if we found a winner
+
                     const bannerText = document.querySelector(SELECTORS.bannerStatus)?.innerText || "";
                     const isResultPhase = bannerText.includes("결과") || bannerText.includes("확인하기") || !!globalWinnerName;
                     
@@ -315,7 +316,6 @@ class ChatroomTab(QWidget):
                         const name = el.querySelector(SELECTORS.optionTitle)?.innerText.trim();
                         const percent = el.querySelector(SELECTORS.optionPercent)?.innerText.trim();
                         
-                        // Check for winner class directly OR match with global winner name
                         let isWinner = el.className.includes("live_chatting_popup_prediction_winner__");
                         if (!isWinner && globalWinnerName && name === globalWinnerName) {
                             isWinner = true;
@@ -324,8 +324,6 @@ class ChatroomTab(QWidget):
                         if (name) items.push({ 'name': name, 'percent': percent, 'isWinner': isWinner });
                     });
 
-                    // 4. 상태별 처리
-                    
                     // Helper for Refresh
                     const tryRefresh = () => {
                         const refreshBtn = document.querySelector(SELECTORS.refreshBtn);
@@ -334,55 +332,33 @@ class ChatroomTab(QWidget):
 
                     // 4. 상태별 처리
                     
-                    // [상태 A] 결과 발표 (우선순위 높음)
+                    // [상태 A] 결과 발표
                     if (isResultPhase) {
-                        // Continuously send data during result phase so overlay stays populated
                         sendUpdate({
                             state: 'RESULT', 
                             title: title, 
                             items: items,
-                            timer: '' // Hide timer
+                            timer: '' 
                         });
 
-                        const winnerEl = document.querySelector(SELECTORS.winnerItem);
-                        if (winnerEl) {
-                            if (!isWinnerPrinted) {
-                                const winnerName = winnerEl.querySelector(SELECTORS.optionTitle)?.innerText.trim();
-                                console.log(`%c🎉 [결과] 우승: ${winnerName}`, "color: yellow; background: #ff0055; font-size: 18px; padding: 8px; font-weight: bold;");
-                                sendWinner(winnerName);
-                                isWinnerPrinted = true; 
-                            }
-                        } else {
-                             // Fallback: If no winner element found despite Result Phase, try to find checked input
-                             const checkedInput = document.querySelector('input[name="prediction"]:checked');
-                             if (checkedInput && !isWinnerPrinted) {
-                                  const parentLabel = checkedInput.closest('label');
-                                  if (parentLabel && parentLabel.classList.contains('live_chatting_popup_prediction_winner__vdCPq')) { // Winner class check
-                                      const winnerName = parentLabel.querySelector(SELECTORS.optionTitle)?.innerText.trim();
-                                      if (winnerName) {
-                                          sendWinner(winnerName);
-                                          isWinnerPrinted = true;
-                                      }
-                                  }
-                             }
+                        if (globalWinnerName && !isWinnerPrinted) {
+                            console.log(`%c🎉 [결과] 우승: ${globalWinnerName}`, "color: yellow; background: #ff0055; font-size: 18px; padding: 8px; font-weight: bold;");
+                            sendWinner(globalWinnerName);
+                            isWinnerPrinted = true; 
                         }
                         
-                        // [CRITICAL] Try refresh if winner not found yet, or just to keep data fresh
                         tryRefresh();
                         return;
                     }
 
-                    // [상태 B] 참여 마감 (Only if NOT Result Phase)
+                    // [상태 B] 참여 마감 (CLOSED)
                     if (timerText.includes('마감') && !timerText.includes('후')) {
-                         // [NEW] Detect transition from ONGOING to CLOSED
                          if (previousState === 'ONGOING' && !closedStateRefreshDone) {
                              console.log("%c[BCU] 상태 전환 감지: 진행중 -> 결과 대기중. 페이지 새로고침 요청...", "color: #ff9900; font-weight: bold;");
                              closedStateRefreshDone = true;
-                             // Request page refresh via Python-exposed function
                              if (typeof window.bcuRefreshForClosedState === 'function') {
                                  window.bcuRefreshForClosedState();
                              } else {
-                                 // Fallback: Direct page reload (will require re-injection)
                                  window.bcu_prediction_scraper_running = false;
                                  location.reload();
                              }
@@ -390,26 +366,25 @@ class ChatroomTab(QWidget):
                          }
                          previousState = 'CLOSED';
                          
-                         // Send items even if closed, but hide timer
+                         // [UPDATE] Even in CLOSED state, we send updates if items change (detected by sendUpdate)
                          sendUpdate({ 
                              state: 'CLOSED',
                              title: title,
                              timer: '', 
                              items: items 
                          });
-                         // [CRITICAL] Try refresh to catch transition to Result
+                         
                          tryRefresh();
                          return;
                     }
 
-                    // [상태 C] 진행 중
+                    // [상태 C] 진행 중 (ONGOING)
                     if (items.length > 0) {
-                        console.clear(); 
-                        console.log(`%c🔴 실시간 | ${title} | ${timerText}`, "color: #00ffa3; font-weight: bold;");
+                        // console.clear(); // Removed clear to see logs better
+                        // console.log(`%c🔴 실시간 | ${title} | ${timerText}`, "color: #00ffa3; font-weight: bold;");
                         
-                        // [NEW] Update state tracking for transition detection
                         previousState = 'ONGOING';
-                        closedStateRefreshDone = false; // Reset for next prediction cycle
+                        closedStateRefreshDone = false; 
                         
                         sendUpdate({
                             state: 'ONGOING',
@@ -419,7 +394,6 @@ class ChatroomTab(QWidget):
                         });
                     }
 
-                    // 5. 다음 데이터를 위해 새로고침 클릭
                     tryRefresh();
 
                 } catch (err) {

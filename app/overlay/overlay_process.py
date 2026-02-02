@@ -239,30 +239,40 @@ INJECT_JS = """
     const SKIP_COOLDOWN = 500;
     let lastSkipTime = 0;
     const originalSetTimeout = window.setTimeout;
+    
+    // Default enabled
+    window.bcu_skip_timer_enabled = true;
 
     if (window.top === window.self) console.log('[Overlay] Script Loaded. Overwriting setTimeout...');
 
     window.setTimeout = function(callback, delay, ...args) {
-        const numericDelay = parseInt(delay, 10);
-        if (!isNaN(numericDelay) && numericDelay >= TARGET_MIN && numericDelay <= TARGET_MAX) {
-            const now = Date.now();
-            if (now - lastSkipTime > SKIP_COOLDOWN) {
-                let cbCode = '';
-                try {
-                    if (callback) {
-                        cbCode = callback.toString();
+        // Skip logic only if enabled
+        if (window.bcu_skip_timer_enabled) {
+            const numericDelay = parseInt(delay, 10);
+            if (!isNaN(numericDelay) && numericDelay >= TARGET_MIN && numericDelay <= TARGET_MAX) {
+                const now = Date.now();
+                if (now - lastSkipTime > SKIP_COOLDOWN) {
+                    let cbCode = '';
+                    try {
+                        if (callback) {
+                            cbCode = callback.toString();
+                        }
+                    } catch(e) {}
+                    
+                    if (cbCode.includes("return new Promise") && cbCode.includes("var t=this,n=arguments")) {
+                        console.log(`[Overlay] Skipped TARGET 3000ms timer.`);
+                        lastSkipTime = now;
+                        return originalSetTimeout(callback, 0, ...args);
                     }
-                } catch(e) {}
-                
-                // User target: function(){var t=this,n=arguments;return new Promise((function(r,i){var a=e.apply(t,n);function o(e)...
-                if (cbCode.includes("return new Promise") && cbCode.includes("var t=this,n=arguments")) {
-                    console.log(`[Overlay] Skipped TARGET 3000ms timer.`);
-                    lastSkipTime = now;
-                    return originalSetTimeout(callback, 0, ...args);
                 }
             }
         }
         return originalSetTimeout(callback, delay, ...args);
+    };
+    
+    window.setSkipTimerEnabled = function(enabled) {
+        window.bcu_skip_timer_enabled = enabled;
+        console.log('[BCU] Skip Timer Enabled:', enabled);
     };
 
     // 2. 투명 배경 및 커스텀 CSS 강제 적용 - DOM 로드 대기 후 실행
@@ -323,7 +333,7 @@ INJECT_JS = """
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    gap: 10px;
+                    gap: 0px !important;
                     padding: 10px 30px 20px 30px;
                     overflow: visible !important;
                 }
@@ -373,7 +383,7 @@ INJECT_JS = """
                     line-height: 50px !important;
                     font-weight: normal !important;
                     color: white !important;
-                    padding: 15px 10px 5px 10px !important;
+                    padding: 0px 10px 5px 10px !important;
                     display: flex !important;
                     justify-content: center !important;
                     align-items: center !important;
@@ -390,6 +400,13 @@ INJECT_JS = """
 
                 [class*="overlay_donation_money"] {
                     margin-right: 5px !important;
+                }
+
+                [class*="overlay_donation_description"] {
+                    margin-bottom: 5px !important;
+                }
+                [class*="overlay_donation_wrapper"] {
+                    margin-top: 0px !important;
                 }
 
                 /* 세로 모드 (Portrait) */
@@ -459,9 +476,170 @@ function toggleOrientation(isPortrait) {
     }
 }
 
+// Global storage for portrait dimensions (used by setAlignment to regenerate CSS)
+var _bcuPortraitWidth = 576;
+var _bcuPortraitHeight = 1024;
+var _bcuIncludeText = true;  // 후원텍스트 포함 여부
+var _bcuVerticalAlign = 'center'; // Vertical Alignment State
+
+// 후원텍스트 포함 여부 설정 함수
+function setIncludeText(includeText) {
+    _bcuIncludeText = includeText;
+    console.log('[BCU] Include text set to:', includeText);
+    // CSS 재생성
+    setPortraitSize(_bcuPortraitWidth, _bcuPortraitHeight);
+}
+
 function setAlignment(alignment) {
+    // Remove old alignment classes
     document.body.classList.remove('align-left', 'align-center', 'align-right');
-    document.body.classList.add('align-' + alignment);
+    document.body.classList.remove('align-v-top', 'align-v-center', 'align-v-bottom');
+    
+    // Parse 9-grid alignment (e.g., "top-left", "center-center", "bottom-right")
+    var parts = alignment.split('-');
+    var vAlign = 'top';
+    var hAlign = 'center';
+    
+    if (parts.length >= 2) {
+        vAlign = parts[0];  // top, center, bottom
+        hAlign = parts[1];  // left, center, right
+    } else {
+        // Legacy single value (left, center, right)
+        hAlign = alignment;
+        
+        if (alignment === 'top' || alignment === 'bottom') {
+            vAlign = alignment;
+            hAlign = 'center';
+        }
+    }
+    
+    _bcuVerticalAlign = vAlign; // Store for setPortraitSize logic
+    
+    document.body.classList.add('align-' + hAlign);
+    document.body.classList.add('align-v-' + vAlign);
+    console.log('[BCU] Alignment set to: h=' + hAlign + ', v=' + vAlign);
+    
+    // Regenerate CSS with new alignment (uses cached dimensions)
+    setPortraitSize(_bcuPortraitWidth, _bcuPortraitHeight);
+}
+
+// 세로 모드 크기 설정 함수 (동적 CSS 업데이트)
+function setPortraitSize(width, height) {
+    // height가 제공되지 않으면 기본 비율로 계산
+    if (!height) {
+        height = Math.round(width * 1024 / 576);
+    }
+    
+    // Cache dimensions globally for setAlignment to use
+    _bcuPortraitWidth = width;
+    _bcuPortraitHeight = height;
+    var centerOffset = Math.round((1280 - width) / 2);
+    var rightOffset = 1280 - width;
+    
+    // 가로화면 높이: include_text에 따라 다름
+    // true: 720(영상) + 162(텍스트) = 882
+    // Physical text height (Always 162)
+    var textH = 162;
+    
+    // Alignment text height
+    // Rule: Include Text toggle only active if v=center. Else always Included.
+    var effectiveInclude = _bcuIncludeText;
+    if (_bcuVerticalAlign !== 'center') {
+        effectiveInclude = true; 
+    }
+    var alignTextH = effectiveInclude ? 162 : 0;
+    
+    // Landscape Alignment Height
+    var landscapeAlignH = 720 + alignTextH;
+
+    // Window Size Calculations (Always include text)
+    var landscapePhysicalH = 720 + 162;
+    var portraitPhysicalH = height + 162;
+    
+    // Use Physical Height for Window Size (maxH)
+    var maxH = Math.max(landscapePhysicalH, portraitPhysicalH);
+    
+    // 기존 동적 스타일 제거
+    var existingStyle = document.getElementById('bcu-portrait-size-style');
+    if (existingStyle) existingStyle.remove();
+    
+    // 새 스타일 생성
+    var style = document.createElement('style');
+    style.id = 'bcu-portrait-size-style';
+    style.textContent = `
+        /* Portrait Mode Sizing */
+        body.portrait iframe[src*="youtube.com"],
+        body.portrait iframe[src*="youtube-nocookie.com"],
+        body.portrait iframe[src*="/embed-clip-donation/"],
+        body.portrait iframe#chzzk_player {
+            width: ${width}px !important;
+            height: ${height}px !important;
+        }
+        body.portrait [class*="overlay_donation_contents"] {
+            top: ${height}px !important;
+            width: ${width}px !important;
+        }
+        body.portrait.align-center iframe,
+        body.portrait.align-center #chzzk_player,
+        body.portrait.align-center [class*="overlay_donation_contents"] {
+            left: ${centerOffset}px !important;
+        }
+        body.portrait.align-right iframe,
+        body.portrait.align-right #chzzk_player,
+        body.portrait.align-right [class*="overlay_donation_contents"] {
+            left: ${rightOffset}px !important;
+        }
+        
+        /* Portrait mode: 세로영상은 항상 top:0 고정. v_align 적용 안 함. */
+        
+        /* ========================================= */
+        /* LANDSCAPE MODE - Vertical Alignment      */
+        /* ========================================= */
+        /* Landscape: Video 720 + Text 162 = 882    */
+        /* Window height = maxH                      */
+        /* Bottom: top = maxH - landscapeH          */
+        /* Center: top = (maxH - landscapeH) / 2    */
+        
+        /* Landscape Mode: Vertical Align Bottom */
+        body:not(.portrait).align-v-bottom iframe,
+        body:not(.portrait).align-v-bottom #chzzk_player {
+            top: ${maxH - landscapeAlignH}px !important;
+        }
+        body:not(.portrait).align-v-bottom [class*="overlay_donation_contents"] {
+            top: ${maxH - landscapeAlignH + 720}px !important;
+        }
+        
+        /* Landscape Mode: Vertical Align Center */
+        body:not(.portrait).align-v-center iframe,
+        body:not(.portrait).align-v-center #chzzk_player {
+            top: ${(maxH - landscapeAlignH) / 2}px !important;
+        }
+        body:not(.portrait).align-v-center [class*="overlay_donation_contents"] {
+            top: ${(maxH - landscapeAlignH) / 2 + 720}px !important;
+        }
+    `;
+    document.head.appendChild(style);
+    console.log('[BCU] Portrait size set to:', width, 'x', height, 'maxH:', maxH);
+}
+
+// 후원알림 텍스트 표시/숨기기 함수
+function setDonationTextVisible(visible) {
+    var existingStyle = document.getElementById('bcu-donation-text-style');
+    if (existingStyle) existingStyle.remove();
+    
+    if (!visible) {
+        var style = document.createElement('style');
+        style.id = 'bcu-donation-text-style';
+        style.textContent = `
+            [class*="overlay_donation_contents"] {
+                display: none !important;
+            }
+        `;
+        document.head.appendChild(style);
+        console.log('[BCU] Donation text hidden');
+    } else {
+        console.log('[BCU] Donation text shown');
+    }
 }
 
 // 3. Video monitoring
@@ -894,6 +1072,10 @@ class SignalBridge(QObject):
     move_window_requested = pyqtSignal(int, int)
     set_taskbar_visible_requested = pyqtSignal(bool)
     get_position_requested = pyqtSignal()
+    set_portrait_size_requested = pyqtSignal(int, int)  # width, height
+    set_skip_timer_enabled_requested = pyqtSignal(bool)
+    set_include_text_requested = pyqtSignal(bool)
+
 
 
 class OverlayWebPage(QWebEnginePage):
@@ -949,6 +1131,7 @@ class ChzzkOverlayProcess(QMainWindow):
         self.is_ui = is_ui
         self.is_portrait = False
         self.alignment = alignment
+        self.include_text = True
         self.allow_close = False  # Close only allowed via IPC command
         
         # Window flags
@@ -995,7 +1178,7 @@ class ChzzkOverlayProcess(QMainWindow):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
         
         # JS injection
-        self.inject_script()
+        self.browser.loadFinished.connect(self._on_load_finished)
         
         # Load URL
         full_url = url + "?cookie=true&w=1280&h=720"
@@ -1024,6 +1207,19 @@ class ChzzkOverlayProcess(QMainWindow):
         self.capture_timer = QTimer(self)
         self.capture_timer.timeout.connect(self.capture_frame)
         self.capture_timer.start(16)  # ~60fps
+
+    def _on_load_finished(self, ok):
+        if ok:
+            print("[Overlay] Page loaded successfully")
+            self.browser.page().runJavaScript(INJECT_JS)
+            
+            # Re-apply settings to ensure valid state after load
+            QTimer.singleShot(100, lambda: self.set_alignment(self.alignment))
+            QTimer.singleShot(200, lambda: self.set_portrait_size(getattr(self, 'portrait_width', 576), getattr(self, 'portrait_height', 1024)))
+            QTimer.singleShot(300, lambda: self.set_include_text(getattr(self, 'include_text', True)))
+            
+            # 클라이언트에게 로드 완료 알림 (stdout 통해)
+            print("page_loaded:true")
 
     def setup_shared_memory(self):
         try:
@@ -1091,6 +1287,43 @@ class ChzzkOverlayProcess(QMainWindow):
     def set_alignment(self, alignment: str):
         self.alignment = alignment
         self.browser.page().runJavaScript(f"setAlignment('{alignment}');")
+
+    def set_portrait_size(self, width: int, height: int = None):
+        """Set portrait mode width and height"""
+        if height is None:
+            height = int(width * 1024 / 576)
+        
+        self.portrait_width = width
+        self.portrait_height = height
+        
+        # 윈도우 크기 동적 조절 (가로: 1280, 세로: max(landscape_h, portrait_h))
+        # include_text 상태 반영
+        text_h = 162 if getattr(self, 'include_text', True) else 0 # legacy var
+        
+        const_text_h = 162
+        landscape_h = 720 + const_text_h
+        portrait_h = height + const_text_h
+        total_h = max(landscape_h, portrait_h)
+        
+        # setFixedSize를 사용하여 크기 고정 해제 후 재설정
+        self.setFixedSize(1280, total_h)
+        
+        self.browser.page().runJavaScript(f"setPortraitSize({width}, {height});")
+        print(f"[Overlay] Portrait size set to: {width}x{height}, Window resized to: 1280x{total_h}, IncludeText: {getattr(self, 'include_text', True)}")
+
+    def set_include_text(self, include_text: bool):
+        """Set include text state and update window size"""
+        self.include_text = include_text
+        self.browser.page().runJavaScript(f"setIncludeText({str(include_text).lower()});")
+        # 크기 재계산
+        self.set_portrait_size(getattr(self, 'portrait_width', 576), getattr(self, 'portrait_height', 1024))
+        print(f"[Overlay] Include text set to: {include_text}")
+
+    def set_skip_timer_enabled(self, enabled: bool):
+        """Enable or disable 3000ms timer skip"""
+        self.browser.page().runJavaScript(f"setSkipTimerEnabled({str(enabled).lower()});")
+        print(f"[Overlay] Skip timer enabled: {enabled}")
+
 
     def refresh_page(self, url: str, is_ui: bool):
         full_url = url + "?cookie=true&w=1280&h=720"
@@ -1438,6 +1671,15 @@ class IPCServer:
             self.signal_bridge.get_position_requested.emit()
         elif cmd == CommandType.CLOSE.value:
             self.signal_bridge.close_requested.emit()
+        elif cmd == CommandType.SET_PORTRAIT_SIZE.value:
+            width = data.get("width", 576)
+            height = data.get("height", int(width * 1024 / 576))
+            self.signal_bridge.set_portrait_size_requested.emit(width, height)
+        elif cmd == CommandType.SET_SKIP_TIMER_ENABLED.value:
+            self.signal_bridge.set_skip_timer_enabled_requested.emit(data.get("enabled", True))
+        elif cmd == CommandType.SET_INCLUDE_TEXT.value:
+            self.signal_bridge.set_include_text_requested.emit(data.get("include_text", True))
+
         elif cmd == CommandType.PING.value:
             self._send_event(evt_pong())
     
@@ -1548,6 +1790,10 @@ def main():
     
     signal_bridge.get_position_requested.connect(on_get_position)
     signal_bridge.close_requested.connect(overlay.force_close)
+    signal_bridge.set_portrait_size_requested.connect(overlay.set_portrait_size)
+    signal_bridge.set_skip_timer_enabled_requested.connect(overlay.set_skip_timer_enabled)
+    signal_bridge.set_include_text_requested.connect(overlay.set_include_text)
+
     
     # Start IPC server
     ipc_server = IPCServer(overlay, signal_bridge)

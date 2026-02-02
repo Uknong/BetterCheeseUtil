@@ -40,6 +40,10 @@ class CommandType(Enum):
     GET_POSITION = "get_position"
     CLOSE = "close"
     PING = "ping"
+    SET_PORTRAIT_SIZE = "set_portrait_size"
+    SET_DONATION_TEXT_VISIBLE = "set_donation_text_visible"
+    SET_SKIP_TIMER_ENABLED = "set_skip_timer_enabled"
+    SET_INCLUDE_TEXT = "set_include_text"
 
 
 class EventType(Enum):
@@ -163,3 +167,17 @@ def evt_ready() -> IPCMessage:
 
 def evt_pong() -> IPCMessage:
     return IPCMessage(EventType.PONG.value)
+
+def cmd_set_portrait_size(width: int, height: int = None) -> IPCMessage:
+    if height is None:
+        height = int(width * 1024 / 576)
+    return IPCMessage(CommandType.SET_PORTRAIT_SIZE.value, {"width": width, "height": height})
+
+def cmd_set_donation_text_visible(visible: bool) -> IPCMessage:
+    return IPCMessage(CommandType.SET_DONATION_TEXT_VISIBLE.value, {"visible": visible})
+
+def cmd_set_skip_timer_enabled(enabled: bool) -> IPCMessage:
+    return IPCMessage(CommandType.SET_SKIP_TIMER_ENABLED.value, {"enabled": enabled})
+
+def cmd_set_include_text(include_text: bool) -> IPCMessage:
+    return IPCMessage(CommandType.SET_INCLUDE_TEXT.value, {"include_text": include_text})

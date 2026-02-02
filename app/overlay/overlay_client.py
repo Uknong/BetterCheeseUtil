@@ -22,7 +22,8 @@ from app.overlay.ipc_protocol import (
     CommandType, EventType, IPCMessage,
     cmd_set_volume, cmd_set_orientation, cmd_set_alignment, cmd_simulate_click, cmd_simulate_skip,
     cmd_simulate_key, cmd_force_connect, cmd_force_skip, cmd_seek_to_start, cmd_toggle_play_pause, cmd_refresh_page, 
-    cmd_move_window, cmd_set_taskbar_visible, cmd_get_position, cmd_close, cmd_ping
+    cmd_move_window, cmd_set_taskbar_visible, cmd_get_position, cmd_close, cmd_ping,
+    cmd_set_portrait_size, cmd_set_donation_text_visible, cmd_set_skip_timer_enabled
 )
 
 
@@ -247,6 +248,19 @@ class OverlayClient(QObject):
         self.alignment = alignment
         self._send_command(cmd_set_alignment(alignment))
     
+    def set_portrait_size(self, width: int, height: int = None):
+        """Set portrait mode width and height"""
+        self._send_command(cmd_set_portrait_size(width, height))
+    
+    def set_donation_text_visible(self, visible: bool):
+        """Show or hide donation text"""
+        self._send_command(cmd_set_donation_text_visible(visible))
+    
+    def set_include_text(self, include_text: bool):
+        """Set include text for alignment calculation"""
+        self.include_text = include_text
+        self._send_command(cmd_set_include_text(include_text))
+    
     def simulate_click(self, x: int, y: int):
         """Simulate mouse click at coordinates"""
         self._send_command(cmd_simulate_click(x, y))
@@ -379,3 +393,8 @@ class OverlayClient(QObject):
     def request_position(self):
         """Request current position from overlay (async, result via position_changed signal)"""
         self._send_command(cmd_get_position())
+
+    def set_skip_timer_enabled(self, enabled: bool):
+        """Enable/Disable 3000ms timer skip"""
+        self._send_command(cmd_set_skip_timer_enabled(enabled))
+

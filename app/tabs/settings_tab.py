@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, QSettings
 
 from app.constants import USERPATH, USERPATH_SLASH
 from app.ui_widgets import QToggle
-from app.ui_dialogs import AutoBanSettingMenuDialog, GuideDialog, TabManagementDialog, AboutDialog
+from app.ui_dialogs import AutoBanSettingMenuDialog, GuideDialog, TabManagementDialog, AboutDialog, OverlaySettingsDialog
 
 class SettingsTab(QWidget):
 
@@ -306,15 +306,20 @@ class SettingsTab(QWidget):
         self.overlay_separate_process.setChecked(False)  # 기본값: 꺼짐
         video_donation_layout.addWidget(self.overlay_separate_process)
 
-        alignment_layout = QHBoxLayout()
-        self.overlay_alignment_label = QLabel('쇼츠 모드 정렬:', self)
-        alignment_layout.addWidget(self.overlay_alignment_label)
-        self.overlay_alignment_combobox = QComboBox(self)
-        self.overlay_alignment_combobox.addItems(["가운데", "왼쪽", "오른쪽"])
-        self.overlay_alignment_combobox.currentIndexChanged.connect(self.on_alignment_changed)
-        alignment_layout.addWidget(self.overlay_alignment_combobox)
-        alignment_layout.addStretch()
-        video_donation_layout.addLayout(alignment_layout)
+        
+        # 영도 후원알림 스킵 토글
+
+        # 영도 후원알림 스킵 토글
+        self.overlay_skip_timer = QToggle("영도 후원알림 스킵 (알림음을 꺼야 완전히 스킵됩니다)")
+        self.overlay_skip_timer.setChecked(True)  # 기본값: 켜짐
+        self.overlay_skip_timer.toggled.connect(self.main_window.update_overlay_skip_timer)
+        video_donation_layout.addWidget(self.overlay_skip_timer)
+
+        # 세로화면 크기 설정 버튼
+        self.overlay_size_settings_button = QPushButton("영상 정렬/크기 설정")
+        self.overlay_size_settings_button.clicked.connect(self.open_overlay_size_settings)
+        video_donation_layout.addWidget(self.overlay_size_settings_button)
+
 
         self.google_login_button = QPushButton("Google 로그인 (유튜브 프리미엄 계정 적용)")
         self.google_login_button.clicked.connect(self.main_window.open_google_login)
@@ -555,8 +560,10 @@ class SettingsTab(QWidget):
         mw.startup_tab_combobox = self.startup_tab_combobox
         mw.startup_tab_combobox = self.startup_tab_combobox
         
-        self.overlay_alignment_combobox.setCurrentText(mw.overlay_alignment_combobox.currentText())
-        mw.overlay_alignment_combobox = self.overlay_alignment_combobox
+        # overlay_alignment는 문자열 값으로 처리 (위젯 제거됨)
+        # self.overlay_alignment = getattr(mw, 'overlay_alignment', 'top-center')
+        # 하지만 SettingsTab 인스턴스 변수로 저장할 필요가 있을까? open_overlay_size_settings에서 직접 mw 접근하거나 getattr 사용하면 됨.
+        # 일단 여기서는 패스.
         
         self.remember_window_check.setChecked(mw.remember_window_check.isChecked())
         mw.remember_window_check = self.remember_window_check
@@ -570,6 +577,13 @@ class SettingsTab(QWidget):
         self.overlay_separate_process.setChecked(mw.overlay_separate_process.isChecked())
         mw.overlay_separate_process = self.overlay_separate_process
 
+        self.overlay_skip_timer.setChecked(mw.overlay_skip_timer.isChecked())
+        mw.overlay_skip_timer = self.overlay_skip_timer
+
+        # overlay_portrait_width는 위젯이 아니라 값이므로 직접 복사
+        self.overlay_portrait_width = getattr(mw, 'overlay_portrait_width', 576)
+        self.overlay_portrait_height = getattr(mw, 'overlay_portrait_height', 1024)
+
         # kanetv8temp는 메인 윈도우에 남겨둠
 
 
@@ -579,14 +593,18 @@ class SettingsTab(QWidget):
 
     def on_alignment_changed(self):
         """정렬 설정 변경 시 메인 윈도우를 통해 오버레이에 즉시 적용"""
-        alignment_map = {
-            "가운데": "center",
-            "왼쪽": "left",
-            "오른쪽": "right"
-        }
-        current_text = self.overlay_alignment_combobox.currentText()
-        alignment_value = alignment_map.get(current_text, "center")
-        self.main_window.update_overlay_alignment(alignment_value)
+        # overlay_alignment_combobox가 제거되었으므로, self.overlay_alignment 값을 직접 사용
+        align = self.overlay_alignment
+        
+        width = getattr(self, 'overlay_portrait_width', 576)
+        height = getattr(self, 'overlay_portrait_height', 1024)
+        
+        # 설정 팝업이 열려있다면 그 값을 사용
+        if hasattr(self, 'overlay_settings_dialog') and self.overlay_settings_dialog and not getattr(self.overlay_settings_dialog, '_closing', True):
+            width = self.overlay_settings_dialog.portrait_width
+            height = self.overlay_settings_dialog.portrait_height
+        
+        self.main_window.update_overlay_live(width, height, align)
 
     def toggle_edit_vid(self):
         if self.edit_button_vid.text() == '수정':
@@ -869,3 +887,54 @@ class SettingsTab(QWidget):
     def on_save_settings_clicked(self):
         self.main_window.save_settings()
         QMessageBox.information(self, '설정 저장', '설정이 저장되었습니다.')
+
+    def open_overlay_size_settings(self):
+        """세로화면 크기 설정 팝업을 엽니다."""
+        # 현재 저장된 세로화면 너비/높이 가져오기
+        current_width = getattr(self, 'overlay_portrait_width', 576)
+        current_height = getattr(self, 'overlay_portrait_height', 1024)
+        
+        # 현재 정렬 설정 가져오기 (초기값으로 전달, 이후 실시간 업데이트)
+        # 기존 콤보박스 대신 저장된 값 사용. 없으면 'top-center' 기본값
+        current_alignment = getattr(self, 'overlay_alignment', 'top-center')
+        
+        # 설정 팝업 생성
+        self.overlay_settings_dialog = OverlaySettingsDialog(current_width, current_height, self.main_window, parent=None)
+        # 초기 정렬 설정 (PreviewWidget 내부 업데이트 위해)
+        self.overlay_settings_dialog.update_alignment(current_alignment)
+        
+        # 실시간 업데이트 연결
+        def on_size_changed(w, h):
+            self.overlay_portrait_width = w
+            self.overlay_portrait_height = h
+            # alignment는 별도 시그널로 처리하거나 현재 값 유지
+            align = getattr(self, 'overlay_alignment', 'top-center')
+            self.main_window.update_overlay_live(w, h, align)
+            self.main_window.save_settings()
+            
+        def on_align_changed(align):
+            self.overlay_alignment = align
+            w = self.overlay_portrait_width
+            h = self.overlay_portrait_height
+            self.main_window.update_overlay_live(w, h, align)
+            self.main_window.save_settings()
+            
+        def on_include_text_changed(include_text):
+            # 오버레이에 직접 전달
+            if hasattr(self.main_window, 'video_donation_tab') and self.main_window.video_donation_tab:
+                if hasattr(self.main_window.video_donation_tab, 'overlay') and self.main_window.video_donation_tab.overlay:
+                    if hasattr(self.main_window.video_donation_tab.overlay, 'set_include_text'):
+                        self.main_window.video_donation_tab.overlay.set_include_text(include_text)
+            
+        self.overlay_settings_dialog.settings_changed.connect(on_size_changed)
+        self.overlay_settings_dialog.align_changed.connect(on_align_changed)
+        self.overlay_settings_dialog.include_text_changed.connect(on_include_text_changed)
+        
+        # 창 위치 설정 (중앙)
+        screen_geo = QApplication.primaryScreen().geometry()
+        x = screen_geo.width() // 2 - 400 # Width 800/2
+        y = screen_geo.height() // 2 - 300
+        self.overlay_settings_dialog.move(x, y)
+        
+        self.overlay_settings_dialog.show()
+        self.overlay_settings_dialog.show()

@@ -81,17 +81,20 @@ class LogAnalyzerWorker(QThread):
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     lines = f.readlines()
 
-                firstchat_date = None
-                lastchat_date = None
+                prev_chat_date = None
 
                 for line in lines:
                     try:
                         chat_date_str = line.split("]")[0].split("[")[1]
                         chat_date = datetime.strptime(chat_date_str, '%Y-%m-%d %H:%M:%S')
 
-                        if firstchat_date is None:
-                            firstchat_date = chat_date
-                        lastchat_date = chat_date
+                        # [NEW] 30분(1800초) 이상 공백 시 세션 분리 (방송 꺼짐 처리)
+                        if prev_chat_date:
+                            diff = (chat_date - prev_chat_date).total_seconds()
+                            if 0 <= diff <= 1800:
+                                elapsecondS += diff
+                        
+                        prev_chat_date = chat_date
                         
                         if "<" not in line: continue
                         id_val, nick = getIDNick(line)
@@ -110,8 +113,7 @@ class LogAnalyzerWorker(QThread):
                     except (IndexError, ValueError):
                         continue
                 
-                if firstchat_date and lastchat_date:
-                    elapsecondS += abs((firstchat_date - lastchat_date).total_seconds())
+
 
             if not self.is_running:
                 return
@@ -180,16 +182,20 @@ class CharCountWorker(QThread):
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     lines = f.readlines()
 
-                firstchat_date = None
-                lastchat_date = None
+                prev_chat_date = None
 
                 for line in lines:
                     try:
                         chat_date_str = line.split("]")[0].split("[")[1]
                         chat_date = datetime.strptime(chat_date_str, '%Y-%m-%d %H:%M:%S')
 
-                        if firstchat_date is None: firstchat_date = chat_date
-                        lastchat_date = chat_date
+                        # [NEW] 30분(1800초) 이상 공백 시 세션 분리
+                        if prev_chat_date:
+                            diff = (chat_date - prev_chat_date).total_seconds()
+                            if 0 <= diff <= 1800:
+                                elapsecondS += diff
+                        
+                        prev_chat_date = chat_date
                         
                         if "<" not in line: continue
                         id_val, nick = getIDNick(line)
@@ -238,8 +244,7 @@ class CharCountWorker(QThread):
                     except (IndexError, ValueError):
                         continue
                 
-                if firstchat_date and lastchat_date:
-                    elapsecondS += abs((firstchat_date - lastchat_date).total_seconds())
+
 
             if not self.is_running: return
 

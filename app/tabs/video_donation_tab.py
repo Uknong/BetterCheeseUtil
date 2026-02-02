@@ -321,6 +321,32 @@ class VideoDonationTab(QWidget):
         """Called when overlay IPC is ready"""
         # OBS capture workaround: Delay hiding from taskbar by 1 second
         QTimer.singleShot(1000, self.update_taskbar_visibility)
+        # Apply portrait size and donation text visibility settings
+        # Increase delay to ensure page is fully loaded
+        QTimer.singleShot(2000, self.apply_overlay_settings)
+        
+    def apply_overlay_settings(self):
+        """Apply portrait size, height, alignment and donation text settings to overlay"""
+        if self.overlay:
+            # Get portrait width and height from settings
+            portrait_width = getattr(self.main_window.settings_tab, 'overlay_portrait_width', 576)
+            portrait_height = getattr(self.main_window.settings_tab, 'overlay_portrait_height', 1024)
+            if hasattr(self.overlay, 'set_portrait_size'):
+                self.overlay.set_portrait_size(portrait_width, portrait_height)
+            
+            # Get alignment from settings_tab (9-grid string format)
+            alignment = getattr(self.main_window.settings_tab, 'overlay_alignment', 'top-center')
+            # Send full 9-grid alignment value (setAlignment JS now parses it)
+            if hasattr(self.overlay, 'set_alignment'):
+                self.overlay.set_alignment(alignment)
+            
+            # Get donation text visibility (inverted since setting is "hide")
+            # hide_donation_text removed
+            hide_donation_text = False
+            if hasattr(self.overlay, 'set_donation_text_visible'):
+                self.overlay.set_donation_text_visible(not hide_donation_text)
+            
+            print(f"[Overlay] Applied settings: portrait={portrait_width}x{portrait_height}, align={alignment}, hide_text={hide_donation_text}")
         
     def update_taskbar_visibility(self):
         """Update overlay taskbar visibility based on settings"""
@@ -371,6 +397,34 @@ class VideoDonationTab(QWidget):
                 # 미리보기 창 실행
                 self.preview_window = OverlayPreviewWindow(self.overlay, self)
                 self.preview_window.show()
+        
+        # 설정 적용 (세로화면 크기 등)
+        if hasattr(self.main_window, 'settings_tab'):
+            w = getattr(self.main_window.settings_tab, 'overlay_portrait_width', 576)
+            h = getattr(self.main_window.settings_tab, 'overlay_portrait_height', 1024)
+            # overlay_process.py의 set_portrait_size 사용.
+            # 하지만 overlay가 아직 로딩 중일 수 있음. ready 시점에 적용하는 것이 좋지만,
+            # set_portrait_size는 내부 멤버 변수 설정 + JS 주입이므로 즉시 호출해도 됨 (단 JS는 로드 후 실행됨)
+            # 하지만 JS 주입은 _on_load_finished 이후에 가능하므로, 
+            # overlay_process 내에서 멤버 변수로 저장해두고 로드 후 적용하거나,
+            # 여기서 딜레이를 주거나, on_video_started 등에서 적용해야 함.
+            # 가장 확실한 건 on_overlay_ready에서 적용.
+        
+    def on_overlay_ready(self):
+        # 오버레이 준비 완료 시 실행
+        if hasattr(self.main_window, 'settings_tab'):
+             w = getattr(self.main_window.settings_tab, 'overlay_portrait_width', 576)
+             h = getattr(self.main_window.settings_tab, 'overlay_portrait_height', 1024)
+             align = getattr(self.main_window.settings_tab, 'overlay_alignment', 'top-center')
+             
+             if self.overlay:
+                 # 정렬 먼저 적용 (변수 설정)
+                 self.overlay.alignment = align
+                 # 크기 적용 (JS 주입 포함)
+                 self.overlay.set_portrait_size(w, h)
+                 # 정렬 적용 (JS 주입)
+                 self.overlay.set_alignment(align)
+                 print(f"[VideoDonationTab] Applied saved settings: {w}x{h}, {align}")
 
     def reset_overlay(self):
         if self.overlay:

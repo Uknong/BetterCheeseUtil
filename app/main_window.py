@@ -86,7 +86,7 @@ class BetterCheeseUtil(QMainWindow):
         self.user_nick_chzzk_ban = ""
         self.user_nick_chzzk_ban = ""
         self.userProfileUrl = ""
-        self.overlay_alignment = "center" # 오버레이 정렬 기본값
+        self.overlay_alignment = "top-center" # 오버레이 정렬 기본값 (9분할 그리드 형식)
         self.remember_window_check = QToggle(self)
         self.remember_chat_popup_check = QToggle(self)
         self.remote_duplicate_check = QToggle(self)
@@ -159,14 +159,10 @@ class BetterCheeseUtil(QMainWindow):
         self.disable_kanetv8_features()
         
         # [SettingsTab] 오버레이 정렬 UI 초기화
-        # load_settings에서 self.overlay_alignment 값을 읽어왔으므로,
-        # SettingsTab의 콤보박스에 반영해줘야 함 (SettingsTab 초기화 이후이므로 가능)
-        alignment_map_rev = {
-            "center": "가운데",
-            "left": "왼쪽",
-            "right": "오른쪽"
-        }
-        self.settings_tab.overlay_alignment_combobox.setCurrentText(alignment_map_rev.get(self.overlay_alignment, "가운데"))
+        # 콤보박스 대신 9분할 그리드 UI 사용. overlay_alignment는 문자열로 저장됨 (예: "top-center")
+        # 설정 탭에 해당 값을 별도 속성으로 전달
+        if hasattr(self, 'settings_tab'):
+            self.settings_tab.overlay_alignment = getattr(self, 'overlay_alignment', 'top-center')
 
         self.setCentralWidget(self.tabs)
         self.move(self.saved_window_position)
@@ -416,6 +412,7 @@ class BetterCheeseUtil(QMainWindow):
             self.pick_tab.remote_duplicate_check, self.pick_tab.only_subscriber_check,
             self.settings_tab.chzzk_video_ui_toggle, self.settings_tab.chzzk_overlay_hide_taskbar,
             self.settings_tab.overlay_disable_gpu, self.settings_tab.overlay_separate_process,
+            self.settings_tab.overlay_skip_timer,
         ]
         for widget in toggle_widgets:
             if widget: # 탭이 로드되었는지 확인
@@ -982,20 +979,21 @@ class BetterCheeseUtil(QMainWindow):
         self.startup_tab_combobox.addItems(["리모컨", "채팅창"])
         self.startup_tab_combobox.setCurrentText(settings.value('startup_tab_combobox', '리모컨'))
 
-        self.overlay_alignment_combobox = QComboBox()
-        self.overlay_alignment_combobox.addItems(["가운데", "왼쪽", "오른쪽"])
-        # 저장된 텍스트 불러오기 (기본값 설정)
-        # load_settings 시점에서는 self.overlay_alignment 변수 자체도 업데이트 해주는 것이 좋음
-        saved_alignment_text = settings.value('overlay_alignment_combobox', '가운데')
-        self.overlay_alignment_combobox.setCurrentText(saved_alignment_text)
-        
-        # 텍스트 -> 값 매핑
-        alignment_map = {
-            "가운데": "center",
-            "왼쪽": "left",
-            "오른쪽": "right"
-        }
-        self.overlay_alignment = alignment_map.get(saved_alignment_text, "center")
+        # overlay_alignment: 9분할 그리드 UI용 문자열 (예: "top-center", "center-left" 등)
+        # 기존 legacy 값과의 호환성 유지
+        saved_alignment = settings.value('overlay_alignment', 'top-center')
+        # 기존 콤보박스 값에서 마이그레이션
+        if saved_alignment in ['center', 'left', 'right']:
+            saved_alignment = f'top-{saved_alignment}'
+        elif saved_alignment in ['가운데', '왼쪽', '오른쪽']:
+            alignment_map = {"가운데": "top-center", "왼쪽": "top-left", "오른쪽": "top-right"}
+            saved_alignment = alignment_map.get(saved_alignment, 'top-center')
+        self.overlay_alignment = saved_alignment
+
+        # Skip Timer 설정 로드 (기본값 True)
+        self.overlay_skip_timer = QToggle()
+        self.overlay_skip_timer.setChecked(settings.value('overlay_skip_timer', True, type=bool))
+
         
         # (모든 QToggle, QCheckBox, QComboBox에 대해 동일한 작업 수행)
         self.toggle_auto_show_img = QToggle()
@@ -1074,6 +1072,9 @@ class BetterCheeseUtil(QMainWindow):
         self.overlay_disable_gpu.setChecked(settings.value('overlay_disable_gpu', False, type=bool))
         self.overlay_separate_process = QToggle()
         self.overlay_separate_process.setChecked(settings.value('overlay_separate_process', False, type=bool))
+
+        self.overlay_portrait_width = settings.value('overlay_portrait_width', 576, type=int)
+        self.overlay_portrait_height = settings.value('overlay_portrait_height', 1024, type=int)
         self.userProfileUrl = settings.value('userProfileUrl', type=str)
         self.remember_window_check.setChecked(settings.value('remember_window_check', True, type=bool))
         self.remember_chat_popup_check.setChecked(settings.value('remember_chat_popup_check', True, type=bool))
@@ -1266,6 +1267,13 @@ class BetterCheeseUtil(QMainWindow):
         self.settings.setValue("Tabs/Order", self.tab_order)
         self.settings.setValue("Tabs/Hidden", hidden_tabs)
 
+    def update_overlay_live(self, width, height, alignment):
+        """Update overlay settings in real-time"""
+        if hasattr(self, 'video_donation_tab') and self.video_donation_tab:
+            if hasattr(self.video_donation_tab, 'overlay') and self.video_donation_tab.overlay:
+                self.video_donation_tab.overlay.set_portrait_size(width, height)
+                self.video_donation_tab.overlay.set_alignment(alignment)
+
     def closeEvent(self, event):
         try:
             if hasattr(self, 'audio_thread') and self.audio_thread and self.audio_thread.is_alive():
@@ -1277,16 +1285,22 @@ class BetterCheeseUtil(QMainWindow):
 
         dialog_locations = [
             (self.remote_tab, 'show_total_money_dialog'),
+            (self.remote_tab, 'chzzk_remote_popup_window'),
             (self.settings_tab, 'about_dialog'),
             (self.settings_tab, 'how_to_auto_show_img_dialog'),
             (self.settings_tab, 'how_to_text_overlay_dialog'),
             (self.settings_tab, 'initial_setup_guide'),
             (self.settings_tab, 'ban_dialog'),
+            (self.settings_tab, 'overlay_preview_dialog'),
+            (self.settings_tab, 'overlay_settings_dialog'),
+            (self.settings_tab, 'tab_management_dialog'),
+            (self.settings_tab, 'overlay_settings_dialog'),
             (self.vote_tab, 'voting_result_window'),
             (self.chatroom_tab, 'test_popup'),
             (self, 'integrated_browser'),
             (self, 'chat_browser'),
-            (self.video_donation_tab, 'preview_window')
+            (self.video_donation_tab, 'preview_window'),
+            (self.video_donation_tab, 'overlay'),
         ]
 
         for parent, name in dialog_locations:
@@ -1342,8 +1356,9 @@ class BetterCheeseUtil(QMainWindow):
             'donation_gif1', 'donation_gif3', 'donation_gif20', 'donation_gif50', 'donation_gif100', 
             'extra_donation_settings', 'devmode_toggle', 'show_donation_list_toggle',
             'auto_notice_toggle', 'auto_notice_textbox', 'youtube_api_key', 'chzzk_video_url',
-            'chzzk_api_client_id', 'chzzk_api_client_secret', 'startup_tab_combobox', 'overlay_alignment_combobox',
-            'remember_window_check', 'chzzk_video_ui_toggle', 'chzzk_overlay_hide_taskbar', 'overlay_disable_gpu', 'overlay_separate_process'
+            'chzzk_api_client_id', 'chzzk_api_client_secret', 'startup_tab_combobox',
+            'remember_window_check', 'chzzk_video_ui_toggle', 'chzzk_overlay_hide_taskbar', 'overlay_disable_gpu', 'overlay_separate_process',
+            'overlay_skip_timer'
         ]
         
         # chat_log_search_tab 위젯들
@@ -1411,6 +1426,11 @@ class BetterCheeseUtil(QMainWindow):
             settings.remove("windowPosition")
         settings.setValue("user_count_visible", self.remote_tab.user_count_visible)
         settings.setValue("userProfileUrl", self.userProfileUrl)
+        settings.setValue("overlay_portrait_width", self.settings_tab.overlay_portrait_width)
+        settings.setValue("overlay_portrait_height", self.settings_tab.overlay_portrait_height)
+        # 정렬 설정 문자열 저장
+        align = getattr(self.settings_tab, 'overlay_alignment', 'top-center')
+        settings.setValue("overlay_alignment", align)
 
     # --- 밴 로직 (공용) ---
     def manager(self, type, cnt, time):
@@ -1448,3 +1468,18 @@ class BetterCheeseUtil(QMainWindow):
         # 현재 열려있는 오버레이가 있다면 즉시 적용
         if self.video_donation_tab.overlay:
             self.video_donation_tab.overlay.set_alignment(alignment)
+
+    def update_overlay_skip_timer(self, enabled):
+        """설정 탭에서 스킵 타이머 토글이 변경되었을 때 호출"""
+        if self.video_donation_tab.overlay:
+            if self.settings_tab.overlay_separate_process.isChecked():
+                # 별도 프로세스 (OverlayClient)
+                self.video_donation_tab.overlay.set_skip_timer_enabled(enabled)
+            else:
+                # 내부 프로세스 (ChzzkOverlay)
+                try:
+                    self.video_donation_tab.overlay.set_skip_timer_enabled(enabled)
+                except AttributeError:
+                    pass
+
+

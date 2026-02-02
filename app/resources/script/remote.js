@@ -1,4 +1,4 @@
-let scrolling = false;
+var scrolling = false;
 let observerRunning = false;
 let firstNonTier2Index = 0;
 

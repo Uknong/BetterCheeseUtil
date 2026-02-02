@@ -305,21 +305,71 @@ class OverlayPreviewWindow(QWidget):
                 return
             
             if hasattr(self.overlay, 'is_portrait') and self.overlay.is_portrait:
-                alignment = getattr(self.overlay, 'alignment', 'center')
-                target_w = 576
-                target_h = 1254
+                alignment = getattr(self.overlay, 'alignment', 'top-center')
                 
-                if alignment == 'left':
+                # Parse 9-grid alignment (e.g., "top-left", "center-center", "bottom-right")
+                parts = alignment.split('-')
+                if len(parts) >= 2:
+                    v_align = parts[0]  # top, center, bottom
+                    h_align = parts[1]  # left, center, right
+                else:
+                    v_align = 'top'
+                    h_align = alignment if alignment in ['left', 'center', 'right'] else 'center'
+                
+                # 동적 크기 가져오기 (기본값: 576)
+                target_w = getattr(self.overlay, 'portrait_width', 576)
+                p_h = getattr(self.overlay, 'portrait_height', 1024)
+                
+                # Portrait mode: Always include text height in target_h (Physical Height)
+                target_h = p_h + 162
+                
+                # X position based on horizontal alignment
+                if h_align == 'left':
                     x = 0
-                elif alignment == 'right':
-                    x = 1280 - target_w # 704
+                elif h_align == 'right':
+                    x = 1280 - target_w 
                 else: # center (default)
-                    x = (1280 - target_w) // 2 # 352
+                    x = (1280 - target_w) // 2 
                 
-                crop_rect = QRect(x, 0, target_w, target_h)
+                # Y position based on vertical alignment
+                # For portrait cropping, we always want Y=0 since we're cropping the portrait region
+                y = 0
+                
+                crop_rect = QRect(x, y, target_w, target_h)
             else:
-                # Landscape: 1280x950
-                crop_rect = QRect(0, 0, 1280, 950)
+                # Landscape mode: crop based on v_align
+                alignment = getattr(self.overlay, 'alignment', 'top-center')
+                parts = alignment.split('-')
+                v_align = parts[0] if len(parts) >= 2 else 'top'
+                
+                # Landscape layout based on v_align + include_text (Alignment Only)
+                include_text = getattr(self.overlay, 'include_text', True)
+                
+                # Rule: Include Text toggle only active if v=center. Else always Included.
+                effective_include = include_text
+                if v_align != 'center':
+                    effective_include = True
+                    
+                align_text_h = 162 if effective_include else 0
+                landscape_align_h = 720 + align_text_h
+                
+                # Physical Landscape Height (Always 882)
+                landscape_physical_h = 720 + 162
+                
+                p_h = getattr(self.overlay, 'portrait_height', 1024)
+                # Physical Window Height (used for Y calculation)
+                max_h = max(landscape_physical_h, p_h + 162)
+                
+                # Y position based on v_align
+                if v_align == 'top':
+                    y = 0
+                elif v_align == 'bottom':
+                    y = max_h - landscape_align_h
+                else:  # center
+                    y = (max_h - landscape_align_h) // 2
+                
+                # Crop Rect Height: Always use physical height (882) to ensure text is visible
+                crop_rect = QRect(0, int(y), 1280, int(landscape_physical_h))
                 
             cropped_pixmap = pixmap.copy(crop_rect)
             self.canvas.set_pixmap(cropped_pixmap)
