@@ -14,10 +14,12 @@ class PreviewCanvas(QWidget):
         super().__init__(parent)
         self.setStyleSheet("background-color: #333;")
         self.current_pixmap = None
+        self.crop_rect = QRect()
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-    def set_pixmap(self, pixmap):
+    def set_pixmap(self, pixmap, crop_rect=None):
         self.current_pixmap = pixmap
+        self.crop_rect = crop_rect if crop_rect else QRect()
         self.update()
 
     def mousePressEvent(self, event):
@@ -42,21 +44,13 @@ class PreviewCanvas(QWidget):
                     orig_x = lx / scale
                     orig_y = ly / scale
                     
+                    # Apply crop offset
+                    if not self.crop_rect.isNull():
+                        orig_x += self.crop_rect.x()
+                        orig_y += self.crop_rect.y()
+                    
                     if self.parent() and getattr(self.parent(), 'overlay', None):
                         overlay = self.parent().overlay
-                        if hasattr(overlay, 'is_portrait') and overlay.is_portrait:
-                            alignment = getattr(overlay, 'alignment', 'center')
-                            target_w = 576
-                            
-                            if alignment == 'left':
-                                offset_x = 0
-                            elif alignment == 'right':
-                                offset_x = 1280 - target_w
-                            else: # center
-                                offset_x = (1280 - target_w) // 2
-                            
-                            orig_x += offset_x
-                        
                         overlay.simulate_click(int(orig_x), int(orig_y))
         super().mousePressEvent(event)
 
@@ -372,7 +366,7 @@ class OverlayPreviewWindow(QWidget):
                 crop_rect = QRect(0, int(y), 1280, int(landscape_physical_h))
                 
             cropped_pixmap = pixmap.copy(crop_rect)
-            self.canvas.set_pixmap(cropped_pixmap)
+            self.canvas.set_pixmap(cropped_pixmap, crop_rect)
         except Exception as e:
             pass
 
