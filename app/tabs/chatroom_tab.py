@@ -120,6 +120,15 @@ class ChatroomTab(QWidget):
         settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, True) # [NEW]
         # 브라우저를 숨기지 않고 화면 밖으로 이동시킴 (스크립트 동작 보장)
         self.chatroom_chzzk_browser.setGeometry(-2000, -2000, 1280, 800)
+        
+        # [NEW] 브라우저 로드 완료 시 승부예측 스크래퍼 자동 시작
+        self.chatroom_chzzk_browser.loadFinished.connect(self._on_chatroom_browser_loaded)
+        
+        # [NEW] 10분마다 userProfileUrl 갱신 타이머
+        self.profile_refresh_timer = QTimer(self)
+        self.profile_refresh_timer.timeout.connect(self._refresh_user_profile_url)
+        self.profile_refresh_timer.start(10 * 60 * 1000)  # 10분 = 600,000ms
+        
         self.setLayout(self.chatroom_layout)
 
         self.load_settings_from_main()
@@ -186,6 +195,31 @@ class ChatroomTab(QWidget):
         self.main_window.userProfileUrl = url.split("/")[4]
         self.chatroom_chzzk_browser.setUrl(QUrl(f"https://chzzk.naver.com/live/{self.input_id_box_chat.text()}/chat"))
 
+    def _on_chatroom_browser_loaded(self, success):
+        """브라우저 로드 완료 시 호출 - 승부예측 스크래퍼 자동 시작 및 userProfileUrl 갱신"""
+        if success:
+            current_url = self.chatroom_chzzk_browser.url().toString()
+            if "chzzk.naver.com/live" in current_url and "/chat" in current_url:
+                print("[ChatroomTab] 채팅창 로드 완료 - 승부예측 스크래퍼 자동 주입...")
+                # 페이지가 완전히 로드된 후 1.5초 뒤에 스크래퍼 주입
+                QTimer.singleShot(1500, self.inject_prediction_scraper)
+                
+                # [NEW] 처음 로드 시에도 userProfileUrl 갱신
+                print("[ChatroomTab] 채팅창 로드 완료 - userProfileUrl 갱신 스크립트 실행...")
+                QTimer.singleShot(3000, self._refresh_user_profile_url)
+    
+    def _refresh_user_profile_url(self):
+        """10분마다 userProfileUrl 갱신"""
+        print("[ChatroomTab] 10분 주기 - userProfileUrl 갱신 시작...")
+        js_file_path = resource_path(r'.\resources\script\chatroom_get_popup.js')
+        try:
+            with open(js_file_path, 'r', encoding='utf-8') as file:
+                script = file.read()
+            self.chatroom_chzzk_browser.page().runJavaScript(script)
+            print("[ChatroomTab] userProfileUrl 갱신 스크립트 실행됨")
+        except Exception as e:
+            print(f"[ChatroomTab] userProfileUrl 갱신 실패: {e}")
+
     def inject_prediction_scraper(self, success=True):
         """Injects the comprehensive prediction scraper (AutoPredictionMaster) [Manual Trigger]"""
         print(f"[ChatroomTab] inject_prediction_scraper called.")
@@ -225,6 +259,14 @@ class ChatroomTab(QWidget):
             let previousState = null; 
             let closedStateRefreshDone = false; 
             let lastPayloadStr = ""; // [NEW] Change detection
+            
+            // [NEW] CLOSED 상태에서 퍼센트 변화 감시용 변수
+            let closedStateStartTime = null; // CLOSED 상태 진입 시간
+            let closedStateMonitoringActive = false; // 모니터링 활성화 여부
+            let lastPercentValues = null; // 마지막 퍼센트 값 저장
+            let popupToggleInterval = null; // 팝업 토글 인터벌
+            const CLOSED_MONITORING_DURATION = 60000; // 1분간 모니터링
+            const POPUP_TOGGLE_INTERVAL = 5000; // 5초마다 팝업 토글
 
             // API Send Helper
             const sendUpdate = (payload) => {
@@ -351,20 +393,61 @@ class ChatroomTab(QWidget):
                         return;
                     }
 
-                    // [상태 B] 참여 마감 (CLOSED)
+                    // [상태 B] 참여 마감 (CLOSED) - 결과 대기중
                     if (timerText.includes('마감') && !timerText.includes('후')) {
-                         if (previousState === 'ONGOING' && !closedStateRefreshDone) {
-                             console.log("%c[BCU] 상태 전환 감지: 진행중 -> 결과 대기중. 페이지 새로고침 요청...", "color: #ff9900; font-weight: bold;");
-                             closedStateRefreshDone = true;
-                             if (typeof window.bcuRefreshForClosedState === 'function') {
-                                 window.bcuRefreshForClosedState();
-                             } else {
-                                 window.bcu_prediction_scraper_running = false;
-                                 location.reload();
+                         // [NEW] CLOSED 상태 처음 진입 시 모니터링 시작
+                         if (previousState === 'ONGOING' || previousState === null) {
+                             if (previousState === 'ONGOING') {
+                                 console.log("%c[BCU] 상태 전환 감지: 진행중 -> 결과 대기중. 1분간 퍼센트 변화 감시 시작...", "color: #ff9900; font-weight: bold;");
                              }
-                             return;
+                             
+                             // 모니터링 초기화
+                             closedStateStartTime = Date.now();
+                             closedStateMonitoringActive = true;
+                             lastPercentValues = items.map(i => i.percent).join(',');
+                             
+                             // 기존 인터벌 정리
+                             if (popupToggleInterval) {
+                                 clearInterval(popupToggleInterval);
+                             }
+                             
+                             // 5초마다 팝업 닫았다 열기 인터벌 설정
+                             popupToggleInterval = setInterval(() => {
+                                 if (!closedStateMonitoringActive) {
+                                     clearInterval(popupToggleInterval);
+                                     return;
+                                 }
+                                 
+                                 // 1분 경과 체크
+                                 if (Date.now() - closedStateStartTime > CLOSED_MONITORING_DURATION) {
+                                     console.log("%c[BCU] 1분 경과 - 퍼센트 변화 감시 종료", "color: #00ff00; font-weight: bold;");
+                                     closedStateMonitoringActive = false;
+                                     clearInterval(popupToggleInterval);
+                                     return;
+                                 }
+                                 
+                                 // 팝업 닫기
+                                 const popup = document.querySelector(SELECTORS.popupContainer);
+                                 if (popup) {
+                                     const closeBtn = popup.querySelector('[class*="popup_button__"]') || popup.childNodes[2]?.childNodes[0];
+                                     if (closeBtn) {
+                                         console.log("[BCU] 퍼센트 갱신을 위해 팝업 닫는 중...");
+                                         closeBtn.click();
+                                     }
+                                 }
+                             }, POPUP_TOGGLE_INTERVAL);
                          }
+                         
                          previousState = 'CLOSED';
+                         
+                         // [NEW] 퍼센트 변화 감지 및 로그
+                         const currentPercentValues = items.map(i => i.percent).join(',');
+                         if (closedStateMonitoringActive && lastPercentValues !== currentPercentValues) {
+                             console.log("%c[BCU] 퍼센트 값 변화 감지!", "color: #00ff00; font-weight: bold;");
+                             console.log("  이전:", lastPercentValues);
+                             console.log("  현재:", currentPercentValues);
+                             lastPercentValues = currentPercentValues;
+                         }
                          
                          // [UPDATE] Even in CLOSED state, we send updates if items change (detected by sendUpdate)
                          sendUpdate({ 
@@ -385,6 +468,17 @@ class ChatroomTab(QWidget):
                         
                         previousState = 'ONGOING';
                         closedStateRefreshDone = false; 
+                        
+                        // [NEW] CLOSED 모니터링 리셋
+                        if (closedStateMonitoringActive) {
+                            closedStateMonitoringActive = false;
+                            if (popupToggleInterval) {
+                                clearInterval(popupToggleInterval);
+                                popupToggleInterval = null;
+                            }
+                        }
+                        closedStateStartTime = null;
+                        lastPercentValues = null;
                         
                         sendUpdate({
                             state: 'ONGOING',

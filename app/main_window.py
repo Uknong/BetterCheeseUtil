@@ -305,9 +305,7 @@ class BetterCheeseUtil(QMainWindow):
 
     @pyqtSlot()
     def chatroom_get_popup_url(self):
-        print("chatroomg eet")
         QTimer.singleShot(1000, self.chatroom_tab.send_chat_message_connected)
-        QTimer.singleShot(2000, self.chatroom_tab.chatroom_get_popup_url)
 
     # --- OAuth 스레드 관리 ---
     @pyqtSlot(str)
