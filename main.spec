@@ -2,10 +2,6 @@ from PyInstaller.utils.hooks import collect_submodules
 
 hidden_imports = collect_submodules('eventlet') + [
     'greenlet',
-    'app.overlay',
-    'app.overlay.ipc_protocol',
-    'app.overlay.overlay_process',
-    'app.overlay.overlay_client',
 ]
 
 excluded_modules = ['PyQt5', 'PySide6']

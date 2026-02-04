@@ -36,15 +36,6 @@ from app.constants import GLOBALFONTSIZE, USERPATH
 import shutil
 from engineio.async_drivers import gevent ## [삭제 금지] pyinstaller exe 생성 시 오류 방지를 위해 필요
 
-# PyInstaller frozen exe에서 오버레이 서브프로세스 실행을 위한 분기 처리
-# --overlay 인자가 있으면 오버레이 프로세스로 실행
-if '--overlay' in sys.argv:
-    # Remove --overlay from argv before passing to overlay process
-    sys.argv.remove('--overlay')
-    from app.overlay.overlay_process import main as overlay_main
-    overlay_main()
-    sys.exit(0)
-
 if __name__ == '__main__':
     # Ensure chat_emoticons.json exists in user directory
     user_json_path = os.path.join(USERPATH, "BCU", "chat_emoticons.json")

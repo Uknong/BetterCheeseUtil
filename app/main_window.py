@@ -118,9 +118,7 @@ class BetterCheeseUtil(QMainWindow):
         self.persistent_profile.setPersistentCookiesPolicy(
             QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
         )
-        self.persistent_profile.setHttpUserAgent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:146.0) Gecko/20100101 Firefox/146.0"
-        )
+        # User-Agent: Using default Chromium UA (Firefox spoofing removed)
         settings = self.persistent_profile.settings() 
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True)
@@ -408,8 +406,8 @@ class BetterCheeseUtil(QMainWindow):
             self.settings_tab.auto_notice_toggle,
             self.settings_tab.remember_window_check, self.settings_tab.remember_chat_popup_check,
             self.pick_tab.remote_duplicate_check, self.pick_tab.only_subscriber_check,
-            self.settings_tab.chzzk_video_ui_toggle, self.settings_tab.chzzk_overlay_hide_taskbar,
-            self.settings_tab.overlay_disable_gpu, self.settings_tab.overlay_separate_process,
+            self.settings_tab.chzzk_video_ui_toggle,
+            self.settings_tab.overlay_disable_gpu,
             self.settings_tab.overlay_skip_timer,
         ]
         for widget in toggle_widgets:
@@ -1064,12 +1062,8 @@ class BetterCheeseUtil(QMainWindow):
         self.chzzk_api_client_secret = QLineEdit(settings.value('chzzk_api_client_secret', type=str))
         self.chzzk_video_ui_toggle = QToggle()
         self.chzzk_video_ui_toggle.setChecked(settings.value('chzzk_video_ui_toggle', False, type=bool))
-        self.chzzk_overlay_hide_taskbar = QToggle()
-        self.chzzk_overlay_hide_taskbar.setChecked(settings.value('chzzk_overlay_hide_taskbar', True, type=bool))
         self.overlay_disable_gpu = QToggle()
         self.overlay_disable_gpu.setChecked(settings.value('overlay_disable_gpu', False, type=bool))
-        self.overlay_separate_process = QToggle()
-        self.overlay_separate_process.setChecked(settings.value('overlay_separate_process', False, type=bool))
 
         self.overlay_portrait_width = settings.value('overlay_portrait_width', 576, type=int)
         self.overlay_portrait_height = settings.value('overlay_portrait_height', 1024, type=int)
@@ -1355,7 +1349,7 @@ class BetterCheeseUtil(QMainWindow):
             'extra_donation_settings', 'devmode_toggle', 'show_donation_list_toggle',
             'auto_notice_toggle', 'auto_notice_textbox', 'youtube_api_key', 'chzzk_video_url',
             'chzzk_api_client_id', 'chzzk_api_client_secret', 'startup_tab_combobox',
-            'remember_window_check', 'chzzk_video_ui_toggle', 'chzzk_overlay_hide_taskbar', 'overlay_disable_gpu', 'overlay_separate_process',
+            'remember_window_check', 'chzzk_video_ui_toggle', 'overlay_disable_gpu',
             'overlay_skip_timer'
         ]
         
@@ -1470,14 +1464,9 @@ class BetterCheeseUtil(QMainWindow):
     def update_overlay_skip_timer(self, enabled):
         """설정 탭에서 스킵 타이머 토글이 변경되었을 때 호출"""
         if self.video_donation_tab.overlay:
-            if self.settings_tab.overlay_separate_process.isChecked():
-                # 별도 프로세스 (OverlayClient)
+            try:
                 self.video_donation_tab.overlay.set_skip_timer_enabled(enabled)
-            else:
-                # 내부 프로세스 (ChzzkOverlay)
-                try:
-                    self.video_donation_tab.overlay.set_skip_timer_enabled(enabled)
-                except AttributeError:
-                    pass
+            except AttributeError:
+                pass
 
 

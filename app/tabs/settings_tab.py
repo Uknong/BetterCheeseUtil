@@ -293,18 +293,10 @@ class SettingsTab(QWidget):
         self.chzzk_video_ui_toggle = QToggle("영도 재생바 표시")
         video_donation_layout.addWidget(self.chzzk_video_ui_toggle)
 
-        self.chzzk_overlay_hide_taskbar = QToggle("영도 오버레이 작업표시줄에서 숨기기 (별도 프로세스 모드에서)")
-        self.chzzk_overlay_hide_taskbar.setChecked(True)  # 기본값: 켜짐(숨기기)
-        video_donation_layout.addWidget(self.chzzk_overlay_hide_taskbar)
-        self.chzzk_overlay_hide_taskbar.clicked.connect(self.main_window.video_donation_tab.update_taskbar_visibility)
 
         self.overlay_disable_gpu = QToggle("영도 오버레이 GPU 가속 비활성화 (프로그램 재시작 시 적용)")
         self.overlay_disable_gpu.setChecked(False)  # 기본값: 꺼짐
         video_donation_layout.addWidget(self.overlay_disable_gpu)
-
-        self.overlay_separate_process = QToggle("영도 오버레이 별도 프로세스로 실행 (오버레이 리셋하여 적용)")
-        self.overlay_separate_process.setChecked(False)  # 기본값: 꺼짐
-        video_donation_layout.addWidget(self.overlay_separate_process)
 
         
         # 영도 후원알림 스킵 토글
@@ -573,9 +565,6 @@ class SettingsTab(QWidget):
 
         self.overlay_disable_gpu.setChecked(mw.overlay_disable_gpu.isChecked())
         mw.overlay_disable_gpu = self.overlay_disable_gpu
-
-        self.overlay_separate_process.setChecked(mw.overlay_separate_process.isChecked())
-        mw.overlay_separate_process = self.overlay_separate_process
 
         self.overlay_skip_timer.setChecked(mw.overlay_skip_timer.isChecked())
         mw.overlay_skip_timer = self.overlay_skip_timer

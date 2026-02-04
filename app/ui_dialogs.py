@@ -1196,36 +1196,29 @@ INJECT_JS = """
 (function() {
     if (window.top === window.self) console.log('[Overlay] INJECT_JS STARTED');
 
-    // Force PC User-Agent (Navigator Override)
+    // Page Visibility API Spoofing - Prevent YouTube from detecting hidden window
     try {
-        const newUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:146.0) Gecko/20100101 Firefox/146.0";
-        const newPlatform = "Win32";
-        const newVendor = "";
+        Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+        Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+        // Block visibilitychange events from propagating
+        document.addEventListener('visibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
+        // Also override hasFocus to always return true
+        Document.prototype.hasFocus = function() { return true; };
+        if (window.top === window.self) console.log('[Overlay] Page Visibility API spoofing applied.');
+    } catch(e) {
+        console.error('[Overlay] Failed to spoof Visibility API:', e);
+    }
 
-        const overrideNavigator = (nav) => {
-            try {
-                Object.defineProperty(nav, 'userAgent', { get: () => newUserAgent, configurable: true });
-                Object.defineProperty(nav, 'platform', { get: () => newPlatform, configurable: true });
-                Object.defineProperty(nav, 'maxTouchPoints', { get: () => 0, configurable: true });
-                Object.defineProperty(nav, 'vendor', { get: () => newVendor, configurable: true });
-                Object.defineProperty(nav, 'deviceMemory', { get: () => 8, configurable: true });
-                Object.defineProperty(nav, 'hardwareConcurrency', { get: () => 8, configurable: true });
-                if (nav.userAgentData) {
-                    delete nav.userAgentData;
-                }
-            } catch (e) {}
-        };
-
-        overrideNavigator(navigator);
-        
+    // Force PC environment (touch events disabled)
+    try {
         // Disable Touch Events if they exist
         if ('ontouchstart' in window) { window.ontouchstart = undefined; }
         if ('ontouchend' in window) { window.ontouchend = undefined; }
         if ('ontouchmove' in window) { window.ontouchmove = undefined; }
         if ('ontouchcancel' in window) { window.ontouchcancel = undefined; }
-        if (window.top === window.self) console.log("[Overlay] Forced PC User-Agent overrides applied to current frame.");
+        if (window.top === window.self) console.log("[Overlay] Touch events disabled.");
     } catch (e) {
-        console.error("[Overlay] Failed to override User-Agent:", e);
+        console.error("[Overlay] Failed to disable touch events:", e);
     }
 
     // Force Viewport for PC
@@ -2396,9 +2389,7 @@ class ChzzkOverlay(QMainWindow):
         self.persistent_profile.setPersistentCookiesPolicy(
             QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
         )
-        self.persistent_profile.setHttpUserAgent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:146.0) Gecko/20100101 Firefox/146.0"
-        )
+        # User-Agent: Using default Chromium UA (Firefox spoofing removed)
         settings = self.persistent_profile.settings() 
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True)
