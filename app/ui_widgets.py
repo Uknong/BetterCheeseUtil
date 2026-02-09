@@ -49,6 +49,15 @@ class CustomWebEnginePage(QWebEnginePage):
                     popup.allow_close_override = True  # Set flag to bypass prevent_close
                 print("[CustomWebEnginePage] Received BCU_ALLOW_CLOSE. Force closing popup in 500ms.")
                 QTimer.singleShot(500, popup.close)
+        elif message == "BCU_CANCEL_PREDICTION":
+            # 승부예측 취소 시 즉시 팝업창 강제 닫기
+            view = self.parent()
+            if view and view.parent():
+                popup = view.parent()
+                if hasattr(popup, 'allow_close_override'):
+                    popup.allow_close_override = True
+                print("[CustomWebEnginePage] Received BCU_CANCEL_PREDICTION. Force closing popup immediately.")
+                QTimer.singleShot(100, popup.close)
     
 class PopupWindow(QWidget):
     def __init__(self, profile: QWebEngineProfile, parent=None):
@@ -117,8 +126,10 @@ class PopupWindow(QWidget):
         def _callback(result):
             print(f"[PopupWindow] runJavaScript executed. Result: {result}")
         
-        if self.browser.page().loadProgress() == 100:
-            print("[PopupWindow] Page already loaded (100%). Running script immediately.")
+        # 페이지가 로드되었는지 확인 (URL이 비어있지 않으면 로드됨)
+        current_url = self.browser.url().toString()
+        if current_url and current_url != "about:blank":
+            print("[PopupWindow] Page already loaded. Running script immediately.")
             self.browser.page().runJavaScript(script, 0, _callback)
         else:
             print("[PopupWindow] Page loading. Connecting to loadFinished.")
@@ -248,18 +259,19 @@ class PopupWindow(QWidget):
                     isActionButton = true;
                 }
                 
-                // Specific Check: Result Announcement (Confirm) OR Cancel Prediction (Yes)
+                console.log("isValidClick check - title: " + title + ", text: " + text);
+                
+                // 승부예측 취소 팝업에서 "예" 버튼 클릭 시 즉시 닫기 요청
+                if (title.includes("승부예측 취소") && (text === "예" || isActionButton)) {
+                    console.log("BCU_CANCEL_PREDICTION");
+                    return;
+                }
+                
+                // Specific Check: Result Announcement (Confirm)
                 let isValidClick = false;
                 if (title.includes("승부예측 결과 발표") && (text === "확인" || isActionButton)) {
                     isValidClick = true;
-                } else if (title.includes("승부예측 취소") && (text === "예" || isActionButton)) {
-                    isValidClick = true;
                 }
-
-                console.log("isValidClick: " + isValidClick);
-                console.log("title: " + title);
-                console.log("text: " + text);
-                console.log("isActionButton: " + isActionButton);
 
                 if (isValidClick) {
                      // [Check 1-Minute Warning]

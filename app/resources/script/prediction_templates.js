@@ -176,15 +176,15 @@
         // Inner HTML with explicit CSS (kebab-case)
         modal.innerHTML = `
             <div style="background: white; width: 500px; border: 2px solid ${STYLE_COLOR}; display: flex; flex-direction: column;">
-                <div style="background: ${STYLE_COLOR}; color: white; padding: 15px; text-align: center; font-size: 20px; font-weight: bold;">템플릿 추가</div>
+                <div style="background: ${STYLE_COLOR}; color: white; padding: 15px; text-align: center; font-size: 20px; font-weight: bold;">프리셋 추가</div>
                 <div style="padding: 30px; color: #333;">
                     <div style="margin-bottom: 30px;">
-                        <label style="display:block; margin-bottom: 10px; font-weight:bold; font-size: 16px;">템플릿 제목:</label>
+                        <label style="display:block; margin-bottom: 10px; font-weight:bold; font-size: 16px;">프리셋 제목:</label>
                         <input type="text" id="bcu-new-tpl-name" style="width:100%; padding: 10px; border:1px solid #ccc; background:#f5f5f5; color:#333; border-radius:4px; font-size: 16px; box-sizing: border-box;">
                     </div>
                     <div style="text-align:center; color:#666; font-size: 14px; line-height: 1.5;">
                         현재 입력된 설정값으로<br>
-                        새로운 템플릿을 추가합니다.
+                        새로운 프리셋을 추가합니다.
                     </div>
                 </div>
                 <div style="padding: 20px; display: flex; justify-content: center; gap: 20px; border-top: 1px solid #eee;">
@@ -202,7 +202,7 @@
                 saveTemplate(name, getFormState());
                 document.body.removeChild(modal);
             } else {
-                alert("템플릿 제목을 입력해주세요.");
+                alert("프리셋 제목을 입력해주세요.");
             }
         };
     }
@@ -254,7 +254,7 @@
                     }
                 };
                 item.querySelector('.delete').onclick = () => {
-                    // if (confirm(`'${tpl.name}' 템플릿을 삭제하시겠습니까?`)) { // Removed confirm
+                    // if (confirm(`'${tpl.name}' 프리셋을 삭제하시겠습니까?`)) { // Removed confirm
                     localTemplates.splice(index, 1);
                     renderList(container);
                     // }
@@ -274,7 +274,7 @@
         // increased width to 500px
         modal.innerHTML = `
             <div style="background: white; width: 500px; border: 2px solid ${STYLE_COLOR}; display: flex; flex-direction: column; max-height: 80vh;">
-                <div style="background: ${STYLE_COLOR}; color: white; padding: 15px; text-align: center; font-size: 20px; font-weight: bold;">템플릿 편집</div>
+                <div style="background: ${STYLE_COLOR}; color: white; padding: 15px; text-align: center; font-size: 20px; font-weight: bold;">프리셋 편집</div>
                 <div style="padding: 20px; color: #333; overflow-y: auto; background: #f5f5f5; flex: 1;">
                     <div id="bcu-edit-list"></div>
                 </div>
@@ -311,7 +311,7 @@
         });
 
         const label = document.createElement('span');
-        label.innerText = '템플릿';
+        label.innerText = '프리셋';
         Object.assign(label.style, {
             fontWeight: 'bold', fontSize: '18px', marginRight: '15px', color: '#333'
         });

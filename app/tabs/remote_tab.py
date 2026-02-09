@@ -540,6 +540,11 @@ class RemoteTab(QWidget):
                 
 
     def remote_script(self):
+        # maintain100Items 설정값을 localStorage에 먼저 저장
+        maintain_enabled = self.main_window.settings_tab.remote_maintain_100_items.isChecked()
+        setting_script = f"localStorage.setItem('maintainItemsEnabled', JSON.stringify({str(maintain_enabled).lower()}));"
+        self.chzzk_remote_browser.page().runJavaScript(setting_script)
+        
         js_file_path = resource_path(r'.\resources\script\remote.js')
         with open(js_file_path, 'r', encoding='utf-8') as file:
             script = file.read()
@@ -608,7 +613,7 @@ class RemoteTab(QWidget):
             self.chzzk_broadcast_browser.page().runJavaScript(tpl_script_content)
             print("[RemoteTab] Prediction Templates injected into broadcast browser.")
         except FileNotFoundError:
-            print(f"오류: 템플릿 스크립트 파일을 찾을 수 없습니다. '{tpl_script_path}'")
+            print(f"오류: 프리셋 스크립트 파일을 찾을 수 없습니다. '{tpl_script_path}'")
         except Exception as e:
             print(f"스크립트 실행 중 오류가 발생했습니다: {e}")
             

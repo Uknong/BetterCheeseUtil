@@ -409,6 +409,7 @@ class BetterCheeseUtil(QMainWindow):
             self.settings_tab.chzzk_video_ui_toggle,
             self.settings_tab.overlay_disable_gpu,
             self.settings_tab.overlay_skip_timer,
+            self.settings_tab.remote_maintain_100_items,
         ]
         for widget in toggle_widgets:
             if widget: # 탭이 로드되었는지 확인
@@ -1093,6 +1094,9 @@ class BetterCheeseUtil(QMainWindow):
         self.overlay_disable_gpu = QToggle()
         self.overlay_disable_gpu.setChecked(settings.value('overlay_disable_gpu', False, type=bool))
 
+        self.remote_maintain_100_items = QToggle()
+        self.remote_maintain_100_items.setChecked(settings.value('remote_maintain_100_items', True, type=bool))
+
         self.overlay_portrait_width = settings.value('overlay_portrait_width', 576, type=int)
         self.overlay_portrait_height = settings.value('overlay_portrait_height', 1024, type=int)
         self.userProfileUrl = settings.value('userProfileUrl', type=str)
@@ -1112,7 +1116,7 @@ class BetterCheeseUtil(QMainWindow):
 
     def update_html(self):
         """
-        템플릿 폴더의 HTML 파일들을 읽어와
+        프리셋 폴더의 HTML 파일들을 읽어와
         지정된 경로에 생성(복사)합니다.
         """
         if not self.kanetv8temp.isChecked(): return
@@ -1132,7 +1136,7 @@ class BetterCheeseUtil(QMainWindow):
                 shutil.copyfile(source_path, destination_path)
 
         except FileNotFoundError as e:
-            print(f"오류: 템플릿 파일을 찾을 수 없습니다. '{template_dir}' 폴더를 확인하세요. - {e}")
+            print(f"오류: 프리셋 파일을 찾을 수 없습니다. '{template_dir}' 폴더를 확인하세요. - {e}")
         except Exception as e:
             print(f"HTML 파일 생성 중 오류가 발생했습니다: {e}")
 
@@ -1378,7 +1382,7 @@ class BetterCheeseUtil(QMainWindow):
             'auto_notice_toggle', 'auto_notice_textbox', 'youtube_api_key', 'chzzk_video_url',
             'chzzk_api_client_id', 'chzzk_api_client_secret', 'startup_tab_combobox',
             'remember_window_check', 'chzzk_video_ui_toggle', 'overlay_disable_gpu',
-            'overlay_skip_timer'
+            'overlay_skip_timer', 'remote_maintain_100_items'
         ]
         
         # chat_log_search_tab 위젯들

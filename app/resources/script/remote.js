@@ -1,6 +1,7 @@
 var scrolling = false;
 let observerRunning = false;
 let firstNonTier2Index = 0;
+let maintainItemsEnabled = loadFromLocalStorage('maintainItemsEnabled', true);
 
 function clickStopNotificationButton() {
   const buttonArea = document.querySelector('[class*="remote_control_aside_footer"]');
@@ -160,6 +161,13 @@ function maintain200Items() {
     scrolling = false;
     return;
   }
+
+  // 설정이 꺼져있으면 실행하지 않음
+  if (!maintainItemsEnabled) {
+    console.log('maintain200Items is disabled by settings');
+    scrolling = false;
+    return;
+  }
   createLoadingOverlay('영상목록 준비 중.. (0/100)', () => {
     clearInterval(checkInterval);
     removeLoadingOverlay(document.querySelector('.loading-overlay'));
@@ -221,7 +229,7 @@ function maintain200Items() {
       }
     });
 
-    if (listRefreshed && toggleButton && !scrolling) {
+    if (listRefreshed && toggleButton && !scrolling && maintainItemsEnabled) {
       console.log('Video list refreshed, rechecking item count...');
       const itemCount = list.children.length;
       if (itemCount >= 100) {
@@ -303,7 +311,9 @@ document.querySelectorAll('[class*="remote_control_tablist"] button').forEach(bu
     button.addEventListener('click', () => {
       setTimeout(() => {
         console.log('208');
-        maintain200Items();
+        if (maintainItemsEnabled) {
+          maintain200Items();
+        }
         toggleButton = true;
         toggleButtonsVisibility();
         updateSearchBarsVisibility();

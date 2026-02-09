@@ -307,6 +307,12 @@ class SettingsTab(QWidget):
         self.overlay_skip_timer.toggled.connect(self.main_window.update_overlay_skip_timer)
         video_donation_layout.addWidget(self.overlay_skip_timer)
 
+        # 리모컨 영상목록 100개 유지 토글
+        self.remote_maintain_100_items = QToggle("리모컨 영상목록 100개 유지하기")
+        self.remote_maintain_100_items.setChecked(True)  # 기본값: 켜짐
+        self.remote_maintain_100_items.toggled.connect(self.update_maintain_items_setting)
+        video_donation_layout.addWidget(self.remote_maintain_100_items)
+
         # 세로화면 크기 설정 버튼
         self.overlay_size_settings_button = QPushButton("영상 정렬/크기 설정")
         self.overlay_size_settings_button.clicked.connect(self.open_overlay_size_settings)
@@ -320,13 +326,6 @@ class SettingsTab(QWidget):
         self.how_to_video_donation_overlay = QPushButton("OBS 영상후원 오버레이 설정법")
         self.how_to_video_donation_overlay.clicked.connect(self.show_video_donation_overlay_guide)
         video_donation_layout.addWidget(self.how_to_video_donation_overlay)
-
-        log_layout = QHBoxLayout()
-        self.open_overlay_log_button = QPushButton("영도 오버레이 로그 폴더 열기")
-        self.open_overlay_log_button.clicked.connect(self.open_overlay_log_folder)
-        log_layout.addWidget(self.open_overlay_log_button)
-        log_layout.addStretch()
-        video_donation_layout.addLayout(log_layout)
         
         layout.addWidget(video_donation_setting_groupbox)
 
@@ -569,12 +568,25 @@ class SettingsTab(QWidget):
         self.overlay_skip_timer.setChecked(mw.overlay_skip_timer.isChecked())
         mw.overlay_skip_timer = self.overlay_skip_timer
 
+        self.remote_maintain_100_items.setChecked(mw.remote_maintain_100_items.isChecked())
+        mw.remote_maintain_100_items = self.remote_maintain_100_items
+
         # overlay_portrait_width는 위젯이 아니라 값이므로 직접 복사
         self.overlay_portrait_width = getattr(mw, 'overlay_portrait_width', 576)
         self.overlay_portrait_height = getattr(mw, 'overlay_portrait_height', 1024)
 
         # kanetv8temp는 메인 윈도우에 남겨둠
 
+    def update_maintain_items_setting(self, enabled):
+        """토글 변경 시 브라우저의 maintainItemsEnabled 값을 즉시 업데이트"""
+        js_code = f"""
+            localStorage.setItem('maintainItemsEnabled', JSON.stringify({str(enabled).lower()}));
+            if (typeof maintainItemsEnabled !== 'undefined') {{
+                maintainItemsEnabled = {str(enabled).lower()};
+            }}
+        """
+        if hasattr(self.main_window, 'remote_tab') and hasattr(self.main_window.remote_tab, 'chzzk_remote_browser'):
+            self.main_window.remote_tab.chzzk_remote_browser.page().runJavaScript(js_code)
 
     def preview_tts(self):
         self.main_window.run_tts_preview("TTS 미리듣기입니다. 잘 들리시나요?")
@@ -846,12 +858,6 @@ class SettingsTab(QWidget):
     
     def show_donation_list_toggle_func(self):
         self.main_window.show_donation_list_toggle_func()
-
-    def open_overlay_log_folder(self):
-        """Open the overlay log folder in file explorer."""
-        log_folder = os.path.join(USERPATH, "BCU", "log_overlay")
-        os.makedirs(log_folder, exist_ok=True)
-        os.startfile(log_folder)
 
     def reset_settings(self):
         reply = QMessageBox.question(self, '설정 초기화', '모든 설정이 초기화되고 프로그램이 재시작됩니다.\n계속하시겠습니까?',
