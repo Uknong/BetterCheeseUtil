@@ -17,6 +17,7 @@ datas = [
     ('./app/resources/script/remote_auto_video_donation_disable.js', './resources/script'), 
     ('./app/resources/script/remote_auto_mission.js', './resources/script'), 
     ('./app/resources/script/video_overlay.js', './resources/script'),
+    ('./app/resources/script/prediction_templates.js', './resources/script'),
     ('./app/resources/templates/ydText_template.html', './resources/templates'), 
     ('./app/resources/templates/donationimg_template.html', './resources/templates'),
     ('./app/resources/templates/prediction_overlay.html', './resources/templates'),
