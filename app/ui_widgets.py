@@ -38,12 +38,15 @@ class CustomWebEnginePage(QWebEnginePage):
         return new_page
 
     def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+        print(f"[Console] {message}")
         if message == "BCU_ALLOW_CLOSE":
             # Attempt to find the PopupWindow parent
             # self.parent() is typically the QWebEngineView
             view = self.parent()
             if view and view.parent():
                 popup = view.parent()
+                if hasattr(popup, 'allow_close_override'):
+                    popup.allow_close_override = True  # Set flag to bypass prevent_close
                 print("[CustomWebEnginePage] Received BCU_ALLOW_CLOSE. Force closing popup in 500ms.")
                 QTimer.singleShot(500, popup.close)
     
@@ -110,7 +113,16 @@ class PopupWindow(QWidget):
             self.move(popup_frame_rect.topLeft())
     
     def run_script(self, script):
-        self.browser.loadFinished.connect(lambda: self.browser.page().runJavaScript(script))
+        print(f"[PopupWindow] run_script called. Script length: {len(script)}")
+        def _callback(result):
+            print(f"[PopupWindow] runJavaScript executed. Result: {result}")
+        
+        if self.browser.page().loadProgress() == 100:
+            print("[PopupWindow] Page already loaded (100%). Running script immediately.")
+            self.browser.page().runJavaScript(script, 0, _callback)
+        else:
+            print("[PopupWindow] Page loading. Connecting to loadFinished.")
+            self.browser.loadFinished.connect(lambda: self.browser.page().runJavaScript(script, 0, _callback))
     
     
     def set_title(self, title):
@@ -125,10 +137,12 @@ class PopupWindow(QWidget):
     def _inject_scraper(self, success):
         """페이지 로드 완료 시 스크립트 재주입 (Refresh only)"""
         if not success: return
-        # User requested to click the internal refresh button every second
+        # Click the internal refresh button every second
         # AND allow closing if Result/Cancel popup confirm buttons are clicked
         script = """
             if (window.refreshInterval) clearInterval(window.refreshInterval);
+            if (window.checkResultInterval) clearInterval(window.checkResultInterval);
+            if (window.bcuTimerInterval) clearInterval(window.bcuTimerInterval);
             
             // 1. Auto Refresh Logic
             window.refreshInterval = setInterval(function() {
@@ -137,8 +151,79 @@ class PopupWindow(QWidget):
                     btn.click();
                 }
             }, 1000);
+
+            // 2. Result Selection Timer Display (fetches from Python backend)
+            window.bcuTimerInterval = setInterval(async function() {
+                try {
+                    const response = await fetch('http://127.0.0.1:5000/prediction_timer_status');
+                    const data = await response.json();
+                    const remaining = data.result_selection_remaining;
+                    
+                    // Find the "결과 선택" button
+                    const buttons = document.querySelectorAll('button');
+                    let resultBtn = null;
+                    buttons.forEach(btn => {
+                        if (btn.innerText.includes('결과 선택')) {
+                            resultBtn = btn;
+                        }
+                    });
+                    
+                    if (resultBtn) {
+                        let timerEl = document.getElementById('bcu-result-timer');
+                        
+                        if (remaining > 0) {
+                            // Timer is running - show countdown
+                            if (!timerEl) {
+                                timerEl = document.createElement('span');
+                                timerEl.id = 'bcu-result-timer';
+                                timerEl.style.cssText = 'margin-left: 10px; color: #ff6b6b; font-weight: bold; font-size: 14px;';
+                                resultBtn.parentElement.insertBefore(timerEl, resultBtn.nextSibling);
+                            }
+                            const min = Math.floor(remaining / 60);
+                            const sec = remaining % 60;
+                            timerEl.textContent = '결과 선택까지 ' + min + ':' + sec.toString().padStart(2, '0') + ' 남음';
+                            timerEl.style.color = '#ff6b6b';
+                        } else {
+                            // Timer ended or never started - remove the element entirely
+                            if (timerEl) {
+                                timerEl.remove();
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Silently fail if server is unavailable
+                }
+            }, 200);
             
-            // 2. Allow Close Logic (Click Listener)
+            // 3. Auto Close Result Logic (New Feature)
+            // If Result Popup is open AND New Prediction matches (Voting/Participating), close popup.
+            window.checkResultInterval = setInterval(function() {
+                const popups = document.querySelectorAll('[class*="popup_container"]');
+                let resultPopup = null;
+                
+                popups.forEach(p => {
+                    const title = p.querySelector('[class*="popup_title"]');
+                    if (title && title.innerText.includes("승부예측 결과 발표")) {
+                        resultPopup = p;
+                    }
+                });
+                
+                if (resultPopup) {
+                    const bodyText = document.body.innerText;
+                    // "진행" indicates a new prediction has started
+                    if (bodyText.includes("진행")) {
+                        console.log("[BCU] New prediction detected! Closing Result Popup...");
+                        const btns = resultPopup.querySelectorAll('button');
+                        btns.forEach(b => {
+                            if (b.innerText.trim() === "확인" || b.className.includes("popup_action__")) {
+                                b.click();
+                            }
+                        });
+                    }
+                }
+            }, 1000);
+            
+            // 3. Allow Close Logic (Click Listener)
             document.body.addEventListener('click', function(e) {
                 // Check if target is inside a button (handle 'span' inside 'button')
                 let target = e.target.closest('button');
@@ -158,6 +243,10 @@ class PopupWindow(QWidget):
                 // Check for Action Button (Confirm/Cancel) - Use wildcard for robustness
                 // e.g. popup_action__KDxfm -> popup_action__
                 let isActionButton = target.className.includes("popup_action__");
+                // or popup_box__ if exists
+                if (target.className.includes("popup_box__")) {
+                    isActionButton = true;
+                }
                 
                 // Specific Check: Result Announcement (Confirm) OR Cancel Prediction (Yes)
                 let isValidClick = false;
@@ -167,9 +256,14 @@ class PopupWindow(QWidget):
                     isValidClick = true;
                 }
 
+                console.log("isValidClick: " + isValidClick);
+                console.log("title: " + title);
+                console.log("text: " + text);
+                console.log("isActionButton: " + isActionButton);
+
                 if (isValidClick) {
                      // [Check 1-Minute Warning]
-                     // Wait 500ms to see if a warning toast appears
+                     // Wait 300ms to see if a warning toast appears
                      setTimeout(() => {
                         const bodyText = document.body.innerText;
                         if (bodyText.includes("1분")) {
@@ -177,11 +271,27 @@ class PopupWindow(QWidget):
                         } else {
                             console.log("BCU_ALLOW_CLOSE");
                         }
-                     }, 500);
+                     }, 300);
                 }
             }, true); // Capture phase
         """
         self.browser.page().runJavaScript(script)
+        
+        # [NEW] Inject Prediction Templates Script for Prediction Popup
+        current_url = self.browser.url().toString()
+        if "/prediction" in current_url:
+            print(f"[PopupWindow] Prediction page detected ({current_url}). Injecting templates script...")
+            try:
+                tpl_script_path = resource_path(os.path.join('resources', 'script', 'prediction_templates.js'))
+                if os.path.exists(tpl_script_path):
+                    with open(tpl_script_path, "r", encoding="utf-8") as file:
+                        tpl_script_content = file.read()
+                    self.browser.page().runJavaScript(tpl_script_content)
+                    print("[PopupWindow] prediction_templates.js injected successfully.")
+                else:
+                    print(f"[PopupWindow] Error: prediction_templates.js not found at {tpl_script_path}")
+            except Exception as e:
+                print(f"[PopupWindow] Failed to inject prediction templates: {e}")
 
     def resize_and_recenter(self, geometry):
         """새 창 열림 시 크기/위치 조정"""

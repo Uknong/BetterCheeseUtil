@@ -3,6 +3,9 @@ from flask import Flask, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
+from app.services import prediction_timer_service
+from app.services.prediction_template_service import prediction_template_service
+
 
 appW = Flask(__name__)
 socketio = SocketIO(appW, cors_allowed_origins="*")
@@ -23,7 +26,8 @@ prediction_state = {
     "timer": "",
     "items": [], # [{name, ratio, percent, vote_count}, ...]
     "winner": None,
-    "result_ts": 0 # Timestamp when result was declared
+    "result_ts": 0, # Timestamp when result was declared
+    "prev_status": "WAITING" # Track previous status for state change detection
 }
 
 
@@ -35,21 +39,61 @@ def update_prediction_stats():
     """Received from Prediction Popup Scraper"""
     data = request.get_json()
     if not data: return {"error": "No data"}, 400
-    prediction_state["status"] = data.get("state", "ONGOING")
+    
+    prev_status = prediction_state.get("prev_status", "WAITING")
+    new_status = data.get("state", "ONGOING")
+    
+    prediction_state["status"] = new_status
     prediction_state["title"] = data.get("title", "승부예측")
     prediction_state["timer"] = data.get("timer", "")
     prediction_state["items"] = data.get("items", [])
     
-    if prediction_state["status"] in ["ONGOING", "WAITING"]:
+    # [NEW] Start result selection timer when state changes to CLOSED
+    if new_status == "CLOSED" and prev_status != "CLOSED":
+        prediction_timer_service.start_result_selection_timer()
+    
+    prediction_state["prev_status"] = new_status
+    
+    # When status becomes WAITING (chat clears the prediction info), clear overlay
+    if new_status == "WAITING":
+        prediction_state["winner"] = None
+        prediction_state["result_ts"] = 0
+        prediction_state["items"] = []
+    elif new_status == "ONGOING":
+        # New prediction started - clear previous winner
         prediction_state["winner"] = None
         prediction_state["result_ts"] = 0
     import time
     is_recent_result = (time.time() - prediction_state["result_ts"] < 600)
     
     if is_recent_result and prediction_state["status"] != "ONGOING" and prediction_state["winner"]:
-         prediction_state["status"] = "RESULT"
-
-    socketio.emit('prediction_update', prediction_state)
+        prediction_state["status"] = "RESULT"
+        data = request.get_json()
+        winner_name = data.get("winner")
+        
+        if winner_name:
+            import time
+            
+            # [FIX] Check if this is a duplicate call with the same winner
+            # Skip if already in RESULT state with same winner - prevents timer restart
+            current_winner = prediction_state.get("winner")
+            current_status = prediction_state.get("status")
+            
+            if current_status == "RESULT" and current_winner == winner_name:
+                # Already processed this result, skip timer restart
+                return {"msg": "winner already set, skipping"}, 200
+            
+            prediction_state["winner"] = winner_name
+            prediction_state["status"] = "RESULT"
+            prediction_state["prev_status"] = "RESULT"
+            prediction_state["timer"] = "" # Hide timer on result
+            prediction_state["result_ts"] = time.time()
+            
+            print("[WebServer] Result announced - winner: {}".format(winner_name))
+    try:
+        socketio.emit('prediction_update', prediction_state)
+    except Exception:
+        print("[WebServer] Failed to emit prediction_update")  # Ignore socket errors
     return {"msg": "ok"}, 200
 
 @appW.route('/update_prediction_winner', methods=['POST'])
@@ -60,35 +104,95 @@ def update_prediction_winner():
     
     if winner_name:
         import time
+        
+        # [FIX] Check if this is a duplicate call with the same winner
+        # Skip if already in RESULT state with same winner - prevents timer restart
+        current_winner = prediction_state.get("winner")
+        current_status = prediction_state.get("status")
+        
+        if current_status == "RESULT" and current_winner == winner_name:
+            # Already processed this result, skip timer restart
+            return {"msg": "winner already set, skipping"}, 200
+        
         prediction_state["winner"] = winner_name
         prediction_state["status"] = "RESULT"
+        prediction_state["prev_status"] = "RESULT"
         prediction_state["timer"] = "" # Hide timer on result
         prediction_state["result_ts"] = time.time()
         
-        socketio.emit('prediction_update', prediction_state)
+        print("[WebServer] Result announced - winner: {}".format(winner_name))
+
+        # NOTE: Removed auto-hide after 5 minutes. Overlay hides when chat clears (WAITING state).
+        
+        try:
+            socketio.emit('prediction_update', prediction_state)
+        except Exception:
+            print("[WebServer] Failed to emit prediction_update")  # Ignore socket errors
         return {"msg": "winner updated"}, 200
     return {"error": "no winner"}, 400
 
-@appW.route('/request_scraper_refresh', methods=['POST'])
-def request_scraper_refresh():
-    """Called by JS scraper when transitioning from ONGOING to CLOSED state.
-    Triggers page refresh and scraper re-injection to get final betting percentages."""
-    data = request.get_json()
-    action = data.get("action", "")
+@appW.route('/prediction_timer_status', methods=['GET'])
+def prediction_timer_status():
+    """Returns remaining seconds for prediction timers"""
+    status = prediction_timer_service.get_timer_status()
+    return status, 200
+
+@appW.route('/prediction_cancelled', methods=['POST'])
+def prediction_cancelled():
+    """Called when prediction is cancelled (예측 취소)"""
+    import time
+    print("[WebServer] Prediction cancelled detected!")
     
-    if action == "refresh_for_closed" and main_app_instance:
-        try:
-            from PyQt6.QtCore import QMetaObject, Qt
-            # Invoke the refresh method on the chatroom tab
-            QMetaObject.invokeMethod(main_app_instance.chatroom_tab, 
-                                     "refresh_page_and_reinject_scraper",
-                                     Qt.ConnectionType.QueuedConnection)
-            print("[WebServer] request_scraper_refresh: Triggered page refresh for CLOSED state")
-            return {"msg": "refresh triggered"}, 200
-        except Exception as e:
-            print(f"[WebServer] Error in request_scraper_refresh: {e}")
-            return {"error": str(e)}, 500
-    return {"error": "invalid action or no main_app_instance"}, 400
+    # Update prediction state to CANCELLED
+    prediction_state["status"] = "CANCELLED"
+    prediction_state["prev_status"] = "CANCELLED"
+    prediction_state["timer"] = ""
+    prediction_state["cancelled_ts"] = time.time()
+
+    # Emit to overlay so it hides (initial)
+    print("[WebServer] Emitting prediction_update...")
+    try:
+        socketio.emit('prediction_update', prediction_state)
+        print("[WebServer] prediction_update emitted.")
+    except Exception:
+        print("[WebServer] Failed to emit prediction_update")  # Ignore socket errors
+    
+    return {"msg": "prediction cancelled acknowledged"}, 200
+
+# --- Prediction Template Endpoints ---
+
+@appW.route('/api/prediction/templates', methods=['GET'])
+def get_prediction_templates():
+    """Get all templates"""
+    data = prediction_template_service.get_all()
+    # Ensure history key existence is not relied upon in new frontend, 
+    # but service returns full data dict.
+    return data, 200
+
+@appW.route('/api/prediction/templates', methods=['PUT'])
+def update_prediction_templates():
+    """Update all templates (reorder/batch update)"""
+    templates = request.get_json()
+    if not isinstance(templates, list): return {"error": "Data must be a list"}, 400
+    data = prediction_template_service.update_all_templates(templates)
+    return data, 200
+
+@appW.route('/api/prediction/template', methods=['POST'])
+def add_prediction_template():
+    """Add a new template"""
+    template = request.get_json()
+    if not template: return {"error": "No data"}, 400
+    data = prediction_template_service.add_template(template)
+    return data, 200
+
+@appW.route('/api/prediction/template', methods=['DELETE'])
+def delete_prediction_template():
+    """Delete a template by ID"""
+    template_id = request.args.get('id')
+    if not template_id: return {"error": "No id"}, 400
+    data = prediction_template_service.delete_template(template_id)
+    return data, 200
+
 
 @appW.route('/open_url', methods=['POST'])
 def open_url():

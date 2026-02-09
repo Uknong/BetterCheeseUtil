@@ -326,9 +326,9 @@ class RemoteTab(QWidget):
         
         if not self.main_window.show_donation_list_toggle.isChecked():
             self.donation_list_button.hide()
-
     
     ##### 리모컨 탭 관련 함수 #####
+    
     def live_detail_func(self):
         self.user_count_visible = not self.user_count_visible
         if self.user_count_visible:
@@ -571,8 +571,9 @@ class RemoteTab(QWidget):
             (function() {
                 const intervalID = setInterval(function() {
                     const elementExists = document.querySelector(".live_form_content__H9r7D") !== null;
-                    if (elementExists) {
-                        console.log("page_loaded:" + elementExists);
+                    const isPrediction = window.location.href.includes("/prediction");
+                    if (elementExists || isPrediction) {
+                        console.log("page_loaded:true");
                         clearInterval(intervalID);
                     }
                 }, 100);
@@ -598,6 +599,16 @@ class RemoteTab(QWidget):
             self.chzzk_broadcast_browser.page().runJavaScript(script_content)
         except FileNotFoundError:
             print(f"오류: 스크립트 파일을 찾을 수 없습니다. 경로를 확인하세요: '{script_path}'")
+
+        # Inject Prediction Templates Script (RE-ADDED)
+        tpl_script_path = os.path.join(r'.\resources\script', 'prediction_templates.js')
+        try:
+            with open(resource_path(tpl_script_path), "r", encoding="utf-8") as file:
+                tpl_script_content = file.read()
+            self.chzzk_broadcast_browser.page().runJavaScript(tpl_script_content)
+            print("[RemoteTab] Prediction Templates injected into broadcast browser.")
+        except FileNotFoundError:
+            print(f"오류: 템플릿 스크립트 파일을 찾을 수 없습니다. '{tpl_script_path}'")
         except Exception as e:
             print(f"스크립트 실행 중 오류가 발생했습니다: {e}")
             

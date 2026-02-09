@@ -261,17 +261,20 @@
                 statusBadge.style.color = "white";
             }
 
-            if (data.status === "WAITING") {
-                mainContainer.style.opacity = '1'; // Show 'waiting' message
+            if (data.status === "WAITING" || data.status === "CANCELLED") {
+                mainContainer.style.opacity = '0'; // Hide completely on waiting/cancelled
                 document.getElementById('title-text').innerText = "승부예측 대기중...";
                 content.innerHTML = "";
-                mainContainer.style.opacity = '0';
                 return;
             } else {
                 mainContainer.style.opacity = '1';
+                // Reset timer style for other states
+                timerBadge.style.color = "white";
+                timerBadge.style.backgroundColor = "#555";
+                timerBadge.style.fontSize = "1.6rem";
             }
 
-            // Update Timer
+            // Update Timer (Normal States)
             if (data.timer) {
                 timerBadge.innerText = data.timer;
                 timerBadge.style.display = "block";

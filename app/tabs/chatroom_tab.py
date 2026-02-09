@@ -252,12 +252,15 @@ class ChatroomTab(QWidget):
                 optionTitle: '[class*="live_chatting_popup_prediction_option_title__"]',
                 optionPercent: '[class*="live_chatting_popup_prediction_percentage__"]',
                 optionItem: '[class*="live_chatting_popup_prediction_option__"]',
-                popupCloseBtn: '[class*="popup_button__"]' 
+                popupCloseBtn: '[class*="popup_button__"]',
+                cancelledMessage: '[class*="live_chatting_prediction_message_description__"]',
+                chatListItems: '[class*="live_chatting_list_item__"]'
             };
 
             let isWinnerPrinted = false;
             let previousState = null; 
-            let closedStateRefreshDone = false; 
+            let closedStateRefreshDone = false;
+            let isCancelledSent = false; // [NEW] 취소 상태 전송 여부
             let lastPayloadStr = ""; // [NEW] Change detection
             
             // [NEW] CLOSED 상태에서 퍼센트 변화 감시용 변수
@@ -295,6 +298,41 @@ class ChatroomTab(QWidget):
                 }).catch(err => console.error("Winner update failed:", err));
             };
 
+            // [NEW] 승부예측 취소 전송 함수
+            const sendCancelled = () => {
+                if (isCancelledSent) return;
+                isCancelledSent = true;
+                console.log("%c[BCU] 승부예측 취소 감지됨! 5분 쿨타임 시작...", "color: #ff6b6b; font-weight: bold;");
+                
+                fetch('http://127.0.0.1:5000/prediction_cancelled', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ cancelled: true })
+                }).catch(err => console.error("Cancelled notification failed:", err));
+            };
+
+            // [NEW] Robust Cancellation Check
+            const checkCancellation = () => {
+                // 1. Precise Class Check
+                const cancelledMsgs = document.querySelectorAll(SELECTORS.cancelledMessage);
+                for (const msg of cancelledMsgs) {
+                    if (msg.textContent && msg.textContent.includes('예측 취소')) return true;
+                }
+                
+                // 2. Broad Text Search in recent chat items
+                // Look for items containing both "승부예측" and "취소"
+                const chatItems = document.querySelectorAll(SELECTORS.chatListItems);
+                // Check only last 10 items to save performance
+                const startIdx = Math.max(0, chatItems.length - 10);
+                for (let i = startIdx; i < chatItems.length; i++) {
+                    const text = chatItems[i].innerText || "";
+                    if (text.includes('승부예측') && text.includes('취소')) {
+                         return true;
+                    }
+                }
+                return false;
+            };
+
             console.clear();
             console.log("%c[치지직 승부예측 봇 V7] 가동 시작 (변화 감지 모드)", "color: #fff; background: #000; font-size: 14px; padding: 4px; font-weight: bold;");
 
@@ -304,9 +342,27 @@ class ChatroomTab(QWidget):
                     const triggerBtn = document.querySelector(SELECTORS.triggerBtn);
                     const popup = document.querySelector(SELECTORS.popupContainer);
                     
+                    // [NEW] 0. 채팅창에서 '예측 취소' 메시지 감지
+                    if (checkCancellation()) {
+                        sendCancelled();
+                        // [FIX] If cancelled, do NOT proceed to send "ONGOING". 
+                        // We assume cancellation means we should stop tracking the "result" or "ongoing" part for this iteration.
+                        return; 
+                    }
+
                     // 1. 배너 자체가 없는 경우 (대기)
                     if (!triggerBtn) {
-                        isWinnerPrinted = false; 
+                        // [NEW] State Transition Check: ONGOING/CLOSED -> WAITING (No Result) implies Cancellation
+                        // If we were ONGOING or CLOSED and suddenly the banner is gone (WAITING) and we didn't go through RESULT...
+                        // It's likely a cancellation.
+                        if (previousState === 'ONGOING' || previousState === 'CLOSED') {
+                             console.log("%c[BCU] " + previousState + " -> WAITING transition detected. Inferred Cancellation.", "color: #ff6b6b; font-weight: bold;");
+                             sendCancelled();
+                        }
+                        
+                        previousState = 'WAITING';
+                        isWinnerPrinted = false;
+                        isCancelledSent = false; // [FIX] Reset flag on WAITING so next cancellation can be detected
                         sendUpdate({ state: 'WAITING' });
                         return; 
                     }
@@ -320,6 +376,27 @@ class ChatroomTab(QWidget):
                     // 3. 현재 팝업의 데이터 읽기
                     let title = document.querySelector(SELECTORS.popupTitle)?.innerText.trim() || "제목없음";
                     title = title.replace(/새로고침/g, '').trim();
+                    
+                    // [NEW] Conflict Check: Banner shows "진행중" but Popup shows OLD result
+                    // If banner says "진행" but popup has winner/dimmed elements, close popup.
+                    const bannerTextCheck = document.querySelector(SELECTORS.bannerStatus)?.innerText || "";
+                    
+                    if (popup && bannerTextCheck.includes("진행")) {
+                        // Check if popup is showing a result (has winner element or dimmed options)
+                        const popupHasWinner = popup.querySelector('[class*="prediction_winner__"]') !== null;
+                        const popupHasDimmed = popup.querySelector('[class*="prediction_dimmed__"]') !== null;
+                        const popupIsResult = popupHasWinner || popupHasDimmed;
+                        
+                        // Banner says "진행중" but popup shows result -> new prediction started, close old result
+                        if (popupIsResult) {
+                             console.log("[BCU] Banner shows '진행중' but popup shows result state. Closing old result popup.");
+                             const closeBtn = popup.querySelector('[class*="popup_action__"] button') || popup.childNodes[2]?.childNodes[0];
+                             if (closeBtn) {
+                                 closeBtn.click();
+                                 return;
+                             }
+                        }
+                    }
                     
                     let timerText = document.querySelector(SELECTORS.timer)?.innerText.replace(/\\n/g, ' ').trim() || "";
                     timerText = timerText.replace(/후.*$/, '').trim();
@@ -376,6 +453,8 @@ class ChatroomTab(QWidget):
                     
                     // [상태 A] 결과 발표
                     if (isResultPhase) {
+                        previousState = 'RESULT'; // [NEW] Track Result State
+                        
                         sendUpdate({
                             state: 'RESULT', 
                             title: title, 
@@ -468,6 +547,7 @@ class ChatroomTab(QWidget):
                         
                         previousState = 'ONGOING';
                         closedStateRefreshDone = false; 
+                        isCancelledSent = false; // [FIX] Reset cancelled flag when new prediction starts 
                         
                         // [NEW] CLOSED 모니터링 리셋
                         if (closedStateMonitoringActive) {
@@ -502,46 +582,13 @@ class ChatroomTab(QWidget):
         # [NEW] Register bcuRefreshForClosedState function for CLOSED state transition
         refresh_callback_code = """
         window.bcuRefreshForClosedState = function() {
-            console.log("[BCU] bcuRefreshForClosedState called - requesting page refresh...");
-            window.bcu_prediction_scraper_running = false;
-            // Signal Python to refresh and re-inject by sending a special POST
-            fetch('http://127.0.0.1:5000/request_scraper_refresh', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ action: 'refresh_for_closed' })
-            }).catch(err => {
-                console.warn("[BCU] Refresh request failed, using fallback reload:", err);
-                location.reload();
-            });
+            console.log("[BCU] Refresh requested but disabled by user request. Doing nothing.");
         };
         """
         self.chatroom_chzzk_browser.page().runJavaScript(refresh_callback_code)
-        
-        # [NEW] Setup page refresh handler using loadFinished signal for re-injection
-        if not hasattr(self, '_refresh_for_closed_connected'):
-            self.chatroom_chzzk_browser.page().loadFinished.connect(self._on_page_reloaded_for_prediction)
-            self._refresh_for_closed_connected = True
+         
+        # [REMOVED] Page refresh handler setup and methods related to re-injection for closed state
 
-    @pyqtSlot()
-    def refresh_page_and_reinject_scraper(self):
-        """Refreshes the chat page and marks for scraper re-injection.
-        Called when transitioning from ONGOING to CLOSED state to get final betting percentages."""
-        print("[ChatroomTab] refresh_page_and_reinject_scraper called - refreshing page...")
-        self._pending_scraper_reinject = True
-        self.prediction_scraper_injected = False
-        current_url = self.chatroom_chzzk_browser.url().toString()
-        self.chatroom_chzzk_browser.setUrl(QUrl(current_url))
-    
-    def _on_page_reloaded_for_prediction(self, success):
-        """Handler for page load finished, re-injects scraper if pending."""
-        if hasattr(self, '_pending_scraper_reinject') and self._pending_scraper_reinject:
-            if success:
-                print("[ChatroomTab] Page reloaded for CLOSED state - re-injecting scraper after delay...")
-                self._pending_scraper_reinject = False
-                # Delay injection to ensure page is fully loaded
-                QTimer.singleShot(1500, self.inject_prediction_scraper)
-            else:
-                print("[ChatroomTab] Page reload failed, will retry...")
 
 
 

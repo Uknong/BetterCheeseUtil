@@ -613,6 +613,34 @@ class BetterCheeseUtil(QMainWindow):
             self.open_browser(url, 500, 900, "승부예측")
             if self.integrated_browser:
                 self.integrated_browser.prevent_close = True
+                
+                # [NEW] Inject Prediction Templates Script
+                QTimer.singleShot(1000, lambda: self._inject_template_script(self.integrated_browser))
+
+    def _inject_template_script(self, browser_window):
+        if not browser_window: 
+            print("[MainWindow] _inject_template_script: browser_window is None")
+            return
+        
+        try:
+            # Correct path construction
+            relative_path = os.path.join('resources', 'script', 'prediction_templates.js')
+            tpl_script_path = resource_path(relative_path)
+            
+            print(f"[MainWindow] Attempting to inject script from: {tpl_script_path}")
+            
+            if not os.path.exists(tpl_script_path):
+                print(f"[MainWindow] Error: Script file not found at {tpl_script_path}")
+                return
+
+            with open(tpl_script_path, "r", encoding="utf-8") as file:
+                tpl_script_content = file.read()
+            
+            print(f"[MainWindow] Read script content ({len(tpl_script_content)} bytes). calling run_script...")
+            browser_window.run_script(tpl_script_content)
+            
+        except Exception as e:
+            print(f"[MainWindow] Failed to inject template script: {e}")
     
     def open_chzzk_user_profile(self):
         url = (f"https://chzzk.naver.com/{self.chatroom_tab.input_id_box_chat.text()}/{self.userProfileUrl}/profile/{self.user_id_chzzk_ban}")
